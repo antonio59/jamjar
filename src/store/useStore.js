@@ -9,8 +9,19 @@ const useStore = create((set, get) => ({
   token: localStorage.getItem('token'),
   isAuthenticated: !!localStorage.getItem('token'),
   
+  // Toast notifications
+  toast: null,
+  
   // UI state
   currentPage: 'home',
+  
+  // Toast actions
+  showToast: (message, type = 'success') => {
+    set({ toast: { message, type } });
+    setTimeout(() => set({ toast: null }), 3000);
+  },
+  
+  hideToast: () => set({ toast: null }),
   
   // Actions
   login: async (username, password) => {
@@ -107,6 +118,20 @@ const useStore = create((set, get) => ({
     await axios.delete(`${API_URL}/requests/${id}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+  },
+  
+  getRequestStatus: async (id) => {
+    const { token } = get();
+    if (!token) return null;
+    try {
+      const response = await axios.get(`${API_URL}/requests/${id}/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Status check error:', error);
+      return null;
+    }
   },
   
   getAnalytics: async () => {

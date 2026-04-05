@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import useStore from '../store/useStore';
 import { BarChart, Home, BookOpen, LogOut } from 'lucide-react';
+import ThemeToggle from './ThemeToggle';
 
 export default function Navbar() {
   const { user, logout } = useStore();
@@ -38,6 +39,7 @@ export default function Navbar() {
           <Link to="/tutorial" className={`flex items-center gap-2 transition-colors ${isActive('/tutorial') ? 'text-purple-600 font-medium' : 'text-gray-700 hover:text-purple-600'}`}>
             <BookOpen className="w-5 h-5" /> Tutorial
           </Link>
+          <ThemeToggle />
           <button onClick={logout} className="text-gray-700 hover:text-red-600 transition-colors">
             <LogOut className="w-5 h-5" />
           </button>

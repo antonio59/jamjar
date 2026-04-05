@@ -7,9 +7,10 @@ import Dashboard from './pages/Dashboard';
 import Analytics from './pages/Analytics';
 import Tutorial from './pages/Tutorial';
 import Navbar from './components/Navbar';
+import Toast from './components/Toast';
 
 function App() {
-  const { isAuthenticated, user } = useStore();
+  const { isAuthenticated, user, toast, hideToast } = useStore();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -44,6 +45,7 @@ function App() {
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </main>
+        {toast && <Toast message={toast.message} type={toast.type} onClose={hideToast} />}
       </div>
     </BrowserRouter>
   );

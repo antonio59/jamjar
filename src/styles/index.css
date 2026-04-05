@@ -4,3 +4,12 @@ body {
   margin: 0;
   font-family: system-ui, -apple-system, sans-serif;
 }
+
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: #1a1a2e;
+  color: #e0e0e0;
+}

@@ -5,7 +5,7 @@ import SearchAutocomplete from '../components/SearchAutocomplete';
 import { Music, Book, CheckCircle, Search } from 'lucide-react';
 
 export default function Home() {
-  const { user, createRequest, search } = useStore();
+  const { user, createRequest, search, showToast } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [selectedTrack, setSelectedTrack] = useState(null);
@@ -40,6 +40,7 @@ export default function Home() {
       duration: selectedTrack.duration,
     });
 
+    showToast('Request sent! A parent will review it soon 🎉', 'success');
     setSubmitted(true);
     setTimeout(() => {
       setSubmitted(false);

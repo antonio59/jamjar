@@ -16,6 +16,7 @@ import {
   getBlockedKeywords,
   addBlockedKeyword,
   removeBlockedKeyword,
+  getRequestById,
 } from '../database.js';
 import { searchYouTube } from '../youtube.js';
 import { downloadAndUpload } from '../downloader.js';
@@ -109,6 +110,19 @@ router.get('/search', authenticateToken, async (req, res) => {
 router.post('/requests', authenticateToken, (req, res) => {
   try {
     const { profile, title, url, type, searchQuery, thumbnail, duration } = req.body;
+    
+    // Check for blocked keywords
+    const blockedKeywords = getBlockedKeywords();
+    const titleLower = title.toLowerCase();
+    const violations = blockedKeywords.filter(kw => titleLower.includes(kw.keyword));
+    
+    if (violations.length > 0) {
+      return res.status(400).json({ 
+        error: 'Content blocked',
+        violations: violations.map(kw => kw.keyword)
+      });
+    }
+    
     const request = createRequest(req.user.id, profile, title, url, type, searchQuery, thumbnail, duration);
     res.json(request);
   } catch (error) {
@@ -197,6 +211,19 @@ router.delete('/blocked-keywords/:id', authenticateToken, requireParent, (req, r
   try {
     removeBlockedKeyword(req.params.id);
     res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get request status (for real-time updates)
+router.get('/requests/:id/status', authenticateToken, (req, res) => {
+  try {
+    const request = getRequestById(req.params.id);
+    if (!request) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+    res.json({ status: request.status, internxt_url: request.internxt_url, error_message: request.error_message });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
