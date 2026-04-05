@@ -13,13 +13,15 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Serve static files from dist
 app.use(express.static(path.join(__dirname, '../dist')));
 
 // API routes
 app.use('/api', apiRoutes);
 
-// Serve frontend for all other routes
-app.get('*', (req, res) => {
+// Serve frontend for all other routes (Express 5 compatible)
+app.get('/{*path}', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
