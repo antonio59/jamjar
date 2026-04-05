@@ -1,4 +1,5 @@
 import axios from 'axios';
+import YtDlp from 'yt-dlp-wrap';
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
 
@@ -22,7 +23,82 @@ const mockAudiobookResults = [
   { id: '13', title: 'The BFG (Audiobook)', url: 'https://youtube.com/watch?v=audiobook5', thumbnail: 'https://img.youtube.com/vi/default/mqdefault.jpg', duration: '5:53:00' },
 ];
 
+// Detect if URL is a playlist
+export function isPlaylistUrl(url) {
+  return url.includes('playlist?') || url.includes('list=');
+}
+
+// Extract playlist ID from URL
+export function extractPlaylistId(url) {
+  const match = url.match(/[?&]list=([^&]+)/);
+  return match ? match[1] : null;
+}
+
+// Get playlist tracks using yt-dlp
+export async function getPlaylistTracks(playlistUrl) {
+  try {
+    const ytDlp = new YtDlp('yt-dlp');
+    
+    // Get playlist info without downloading
+    const result = await ytDlp.exec(playlistUrl, {
+      dumpJson: true,
+      extractFlat: true,
+      noPlaylist: false,
+    });
+    
+    const data = JSON.parse(result.stdout);
+    
+    return data.entries.map((entry, index) => ({
+      id: entry.id,
+      title: entry.title,
+      url: `https://youtube.com/watch?v=${entry.id}`,
+      thumbnail: entry.thumbnails?.[0]?.url || `https://img.youtube.com/vi/${entry.id}/mqdefault.jpg`,
+      duration: entry.duration ? formatDuration(entry.duration) : 'Unknown',
+      playlistIndex: index + 1,
+      playlistTitle: data.title,
+    }));
+  } catch (error) {
+    console.error('Failed to fetch playlist:', error.message);
+    return [];
+  }
+}
+
+function formatDuration(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 export async function searchYouTube(query, type = 'music') {
+  // If query is a YouTube URL, check if it's a playlist
+  if (query.includes('youtube.com') || query.includes('youtu.be')) {
+    if (isPlaylistUrl(query)) {
+      const tracks = await getPlaylistTracks(query);
+      return tracks.map(t => ({
+        ...t,
+        isPlaylist: true,
+        playlistTrackCount: tracks.length,
+      }));
+    }
+    
+    // Single video URL - return as-is
+    const videoId = query.match(/(?:v=|youtu\.be\/)([^&?]+)/)?.[1];
+    if (videoId) {
+      return [{
+        id: videoId,
+        title: 'Video from URL',
+        url: query,
+        thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+        duration: 'Unknown',
+      }];
+    }
+  }
+
   // If YouTube API key is configured, use real API
   if (YOUTUBE_API_KEY) {
     try {
@@ -44,11 +120,10 @@ export async function searchYouTube(query, type = 'music') {
         title: item.snippet.title,
         url: `https://youtube.com/watch?v=${item.id.videoId}`,
         thumbnail: item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
-        duration: 'Unknown', // Would need additional API call to get duration
+        duration: 'Unknown',
       }));
     } catch (error) {
       console.error('YouTube API error:', error.message);
-      // Fall back to mock data
     }
   }
   
