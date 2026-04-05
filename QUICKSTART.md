@@ -40,10 +40,16 @@ The app comes with pre-seeded test accounts:
 
 **For Kids:**
 1. Login with your kid account
-2. Search for music or audiobooks
-3. Select a track and click "Send Request"
+2. Search for music or audiobooks **OR paste a YouTube playlist URL**
+3. Select a track or playlist and click "Send Request"
 4. Wait for parent approval
 5. Check "My Requests" to see status
+
+**Playlist Support:**
+- Paste any YouTube playlist URL (e.g., `https://youtube.com/playlist?list=PLxyz...`)
+- The app extracts all tracks and creates individual requests
+- Parents approve each track separately
+- Great for requesting entire albums or themed collections!
 
 **For Parents:**
 1. Login with parent account
