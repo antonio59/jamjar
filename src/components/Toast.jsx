@@ -1,8 +1,13 @@
-import { useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { CheckCircle, XCircle, AlertCircle } from "lucide-react";
 
-export default function Toast({ message, type = 'success', onClose, duration = 3000 }) {
+export default function Toast({
+  message,
+  type = "success",
+  onClose,
+  duration = 3000,
+}) {
   useEffect(() => {
     if (duration > 0) {
       const timer = setTimeout(onClose, duration);
@@ -18,10 +23,12 @@ export default function Toast({ message, type = 'success', onClose, duration = 3
   };
 
   const bgColors = {
-    success: 'bg-green-50 border-green-200',
-    error: 'bg-red-50 border-red-200',
-    warning: 'bg-yellow-50 border-yellow-200',
-    info: 'bg-blue-50 border-blue-200',
+    success:
+      "bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-700",
+    error: "bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-700",
+    warning:
+      "bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-700",
+    info: "bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-700",
   };
 
   return (
@@ -32,8 +39,13 @@ export default function Toast({ message, type = 'success', onClose, duration = 3
       className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-6 py-4 rounded-xl shadow-lg border-2 ${bgColors[type]}`}
     >
       {icons[type]}
-      <span className="font-medium text-gray-800">{message}</span>
-      <button onClick={onClose} className="ml-2 text-gray-500 hover:text-gray-700">
+      <span className="font-medium text-gray-800 dark:text-gray-200">
+        {message}
+      </span>
+      <button
+        onClick={onClose}
+        className="ml-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+      >
         ×
       </button>
     </motion.div>
