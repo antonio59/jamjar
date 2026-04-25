@@ -102,17 +102,17 @@ export default function Dashboard() {
   const getStatusIcon = (status) => {
     switch (status) {
       case "pending":
-        return <Clock className="w-5 h-5 text-yellow-500" />;
+        return <Clock className="w-5 h-5 text-yellow-700" />;
       case "approved":
-        return <CheckCircle className="w-5 h-5 text-green-500" />;
+        return <CheckCircle className="w-5 h-5 text-green-700" />;
       case "rejected":
-        return <XCircle className="w-5 h-5 text-red-500" />;
+        return <XCircle className="w-5 h-5 text-red-700" />;
       case "downloading":
-        return <Download className="w-5 h-5 text-blue-500 animate-pulse" />;
+        return <Download className="w-5 h-5 text-blue-700 animate-pulse" />;
       case "completed":
-        return <CheckCircle className="w-5 h-5 text-green-600" />;
+        return <CheckCircle className="w-5 h-5 text-green-800" />;
       case "failed":
-        return <XCircle className="w-5 h-5 text-red-600" />;
+        return <XCircle className="w-5 h-5 text-red-800" />;
       default:
         return null;
     }

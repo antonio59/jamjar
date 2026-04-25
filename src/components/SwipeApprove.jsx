@@ -115,13 +115,13 @@ export default function SwipeApprove({ requests, onApprove, onReject }) {
         <div className="absolute top-4 right-4 flex gap-2">
           <motion.div
             style={{ opacity: useTransform(x, [0, 150], [0, 1]) }}
-            className="bg-green-500 text-white px-4 py-2 rounded-full font-bold text-sm"
+            className="bg-green-700 text-white px-4 py-2 rounded-full font-bold text-sm"
           >
             APPROVE ✓
           </motion.div>
           <motion.div
             style={{ opacity: useTransform(x, [-150, 0], [1, 0]) }}
-            className="bg-red-500 text-white px-4 py-2 rounded-full font-bold text-sm"
+            className="bg-red-700 text-white px-4 py-2 rounded-full font-bold text-sm"
           >
             REJECT ✗
           </motion.div>
@@ -165,7 +165,7 @@ export default function SwipeApprove({ requests, onApprove, onReject }) {
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.9 }}
           onClick={() => handleSwipe("left")}
-          className="bg-red-500 hover:bg-red-600 text-white p-4 rounded-full shadow-lg"
+          className="bg-red-700 hover:bg-red-800 text-white p-4 rounded-full shadow-lg"
         >
           <XCircle className="w-8 h-8" />
         </motion.button>
@@ -173,7 +173,7 @@ export default function SwipeApprove({ requests, onApprove, onReject }) {
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.9 }}
           onClick={() => handleSwipe("right")}
-          className="bg-green-500 hover:bg-green-600 text-white p-4 rounded-full shadow-lg"
+          className="bg-green-700 hover:bg-green-800 text-white p-4 rounded-full shadow-lg"
         >
           <CheckCircle className="w-8 h-8" />
         </motion.button>
@@ -239,7 +239,7 @@ export default function SwipeApprove({ requests, onApprove, onReject }) {
                   !selectedReason ||
                   (selectedReason === "other" && !customReason)
                 }
-                className="flex-1 py-3 px-4 bg-red-500 hover:bg-red-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+                className="flex-1 py-3 px-4 bg-red-700 hover:bg-red-800 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
               >
                 Reject
               </button>

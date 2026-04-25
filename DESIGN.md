@@ -118,6 +118,12 @@ components:
   page-background-dark:
     backgroundColor: "#1A1A2E"
     textColor: "#E5E7EB"
+  icon-success:
+    textColor: "{colors.success}"
+    size: "20px"
+  icon-error:
+    textColor: "{colors.error}"
+    size: "20px"
   card-elevated:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.on-surface}"
@@ -167,12 +173,12 @@ components:
     rounded: "{rounded.2xl}"
     padding: "24px"
   swipe-overlay-approve:
-    backgroundColor: "{colors.success}"
+    backgroundColor: "#15803D"
     textColor: "{colors.on-success}"
     rounded: "{rounded.full}"
     typography: "{typography.label}"
   swipe-overlay-reject:
-    backgroundColor: "{colors.error}"
+    backgroundColor: "#B91C1C"
     textColor: "{colors.on-error}"
     rounded: "{rounded.full}"
     typography: "{typography.label}"

@@ -58,6 +58,7 @@ NODE_ENV=production
 DB_PATH=$APP_DIR/data/jamjar.db
 DOWNLOAD_DIR=$APP_DIR/downloads
 YOUTUBE_API_KEY=
+SENTRY_DSN=
 EOF
     echo "✅ .env created with secure JWT_SECRET"
     echo "⚠️  Edit .env to add YouTube API key if needed"

@@ -59,7 +59,7 @@ export default function Tutorial() {
                 className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm transition-colors"
               >
                 <div className="flex items-start gap-3">
-                  <div className="bg-orange-500 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold flex-shrink-0">
+                  <div className="bg-orange-700 text-white rounded-full w-8 h-8 flex items-center justify-center font-bold flex-shrink-0">
                     {step.num}
                   </div>
                   <div>
