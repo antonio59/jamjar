@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { v4 as uuidv4 } from 'uuid';
+import bcrypt from 'bcryptjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -79,10 +80,11 @@ db.exec(`
 // Helper functions
 export function createUser(username, pin, role, profile = null, displayName = null, avatarEmoji = '👤') {
   const id = uuidv4();
+  const hashedPin = bcrypt.hashSync(pin, 10);
   const stmt = db.prepare(
     'INSERT INTO users (id, username, pin, role, profile, display_name, avatar_emoji) VALUES (?, ?, ?, ?, ?, ?, ?)'
   );
-  stmt.run(id, username, pin, role, profile, displayName, avatarEmoji);
+  stmt.run(id, username, hashedPin, role, profile, displayName, avatarEmoji);
   return { id, username, role, profile, display_name: displayName, avatar_emoji: avatarEmoji };
 }
 
@@ -99,7 +101,7 @@ export function getUserById(id) {
 export function verifyPin(username, pin) {
   const user = getUserByUsername(username);
   if (!user) return null;
-  if (user.pin !== pin) return null;
+  if (!bcrypt.compareSync(pin, user.pin)) return null;
   return user;
 }
 

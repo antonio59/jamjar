@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import bcrypt from 'bcryptjs';
 import fs from 'fs';
 
 const DB_PATH = process.env.DB_PATH || './data/jamjar.db';
@@ -17,10 +18,10 @@ if (!NEW_PIN) {
 }
 
 const db = new Database(DB_PATH);
-const stmt = db.prepare('UPDATE users SET pin = ?');
-const result = stmt.run(NEW_PIN);
+const hashedPin = bcrypt.hashSync(NEW_PIN, 10);
+const result = db.prepare('UPDATE users SET pin = ?').run(hashedPin);
 
-console.log(`✅ Updated ${result.changes} user(s) to PIN: ${NEW_PIN}`);
+console.log(`✅ Updated ${result.changes} user(s) — PIN hashed with bcrypt`);
 
 const users = db.prepare('SELECT username, role, display_name FROM users').all();
 console.log('\nCurrent users:');
