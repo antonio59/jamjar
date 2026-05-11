@@ -221,12 +221,12 @@ export default function Analytics() {
             {data.topRequested.map((item, index) => (
               <div
                 key={index}
-                className="flex items-center justify-between py-2 border-b last:border-0 dark:border-gray-700"
+                className="flex items-center justify-between gap-3 py-2 border-b last:border-0 dark:border-gray-700"
               >
-                <span className="text-gray-800 dark:text-gray-200">
+                <span className="text-gray-800 dark:text-gray-200 truncate min-w-0">
                   {item.title}
                 </span>
-                <span className="font-bold text-purple-600">
+                <span className="font-bold text-purple-600 flex-shrink-0">
                   {item.times_requested}x
                 </span>
               </div>
@@ -250,8 +250,8 @@ export default function Analytics() {
                 key={request.id}
                 className="flex items-center justify-between py-2 border-b last:border-0 dark:border-gray-700"
               >
-                <div>
-                  <p className="font-medium text-gray-800 dark:text-gray-200">
+                <div className="min-w-0">
+                  <p className="font-medium text-gray-800 dark:text-gray-200 truncate">
                     {request.title}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">

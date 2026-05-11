@@ -43,15 +43,18 @@ export async function downloadAndUpload(request) {
       return;
     }
 
+    const isYoto = request.profile === "yoto";
     const options = {
       format: "bestaudio/best",
       extractAudio: true,
       audioFormat: "mp3",
-      audioQuality: "0",
+      // Yoto: ~128kbps VBR, no embedded art — plain MP3 uploads most reliably
+      // iPod: best quality with thumbnail embedded
+      audioQuality: isYoto ? "5" : "0",
       output: outputFile,
       noPlaylist: true,
       restrictFilenames: true,
-      embedThumbnail: true,
+      ...(isYoto ? {} : { embedThumbnail: true }),
     };
 
     console.log(`Downloading with yt-dlp: ${request.url}`);
