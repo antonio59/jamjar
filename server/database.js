@@ -80,7 +80,7 @@ db.exec(`
 // Helper functions
 export function createUser(username, pin, role, profile = null, displayName = null, avatarEmoji = '👤') {
   const id = uuidv4();
-  const hashedPin = bcrypt.hashSync(pin, 10);
+  const hashedPin = bcrypt.hashSync(pin, 12);
   const stmt = db.prepare(
     'INSERT INTO users (id, username, pin, role, profile, display_name, avatar_emoji) VALUES (?, ?, ?, ?, ?, ?, ?)'
   );
@@ -98,10 +98,12 @@ export function getUserById(id) {
   return stmt.get(id);
 }
 
-export function verifyPin(username, pin) {
+export async function verifyPin(username, pin) {
   const user = getUserByUsername(username);
-  if (!user) return null;
-  if (!bcrypt.compareSync(pin, user.pin)) return null;
+  // Always run bcrypt compare (even on missing user) to prevent timing attacks
+  const hashToCheck = user ? user.pin : '$2a$12$invalidhashfortimingprotection000000000000000000000000';
+  const valid = await bcrypt.compare(pin, hashToCheck);
+  if (!user || !valid) return null;
   return user;
 }
 
@@ -227,7 +229,7 @@ export function removeBlockedKeyword(id) {
 }
 
 // Session management (persistent, survives server restarts)
-const SESSION_TTL_DAYS = 30;
+const SESSION_TTL_DAYS = 7;
 
 export function createSession(sessionId, userId) {
   const stmt = db.prepare(
@@ -238,6 +240,8 @@ export function createSession(sessionId, userId) {
 }
 
 export function getSession(sessionId) {
+  // Delete expired session if found, then return only valid ones
+  db.prepare("DELETE FROM sessions WHERE session_id = ? AND expires_at <= datetime('now')").run(sessionId);
   const stmt = db.prepare(
     `SELECT s.session_id, u.id, u.username, u.role, u.profile, u.display_name, u.avatar_emoji
      FROM sessions s JOIN users u ON s.user_id = u.id

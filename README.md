@@ -65,10 +65,6 @@ This script:
 - Gets SSL certificate from Let's Encrypt
 - Seeds the database with default accounts
 
-After deployment, configure your DNS:
-1. Add A record: `jamjar.antoniosmith.xyz` → your VPS IP
-2. Access via `https://jamjar.antoniosmith.xyz`
-
 ### Option 2: Manual VPS Setup
 
 See `DEPLOY_VPS.md` for step-by-step manual instructions.

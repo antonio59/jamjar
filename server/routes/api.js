@@ -1,11 +1,11 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { randomBytes } from "crypto";
+import { randomBytes, createHash } from "crypto";
 import { fileURLToPath } from "url";
 import axios from "axios";
+import rateLimit from "express-rate-limit";
 import {
-  getUserByUsername,
   verifyPin,
   createRequest,
   getAllRequests,
@@ -39,10 +39,33 @@ const router = express.Router();
 purgeExpiredSessions();
 setInterval(purgeExpiredSessions, 6 * 60 * 60 * 1000);
 
+// Allowed external hostnames for video info and downloading
+const ALLOWED_VIDEO_HOSTS = new Set([
+  "www.youtube.com",
+  "youtube.com",
+  "m.youtube.com",
+  "youtu.be",
+  "music.youtube.com",
+]);
+
+function validateVideoUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (!["https:", "http:"].includes(parsed.protocol)) return false;
+    return ALLOWED_VIDEO_HOSTS.has(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function hashSessionId(id) {
+  return createHash("sha256").update(id).digest("hex");
+}
+
 function authenticateSession(req, res, next) {
-  const sessionId = req.headers["x-session-id"];
-  if (!sessionId) return res.status(401).json({ error: "Not authenticated" });
-  const session = getSession(sessionId);
+  const rawId = req.headers["x-session-id"];
+  if (!rawId) return res.status(401).json({ error: "Not authenticated" });
+  const session = getSession(hashSessionId(rawId));
   if (!session) return res.status(401).json({ error: "Not authenticated" });
   req.user = session;
   next();
@@ -55,18 +78,31 @@ function requireParent(req, res, next) {
   next();
 }
 
+// Strict rate limit on login — 10 attempts per 15 min per IP
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many login attempts, please try again later" },
+});
+
 // Auth routes - PIN-based
-router.post("/auth/login", (req, res) => {
+router.post("/auth/login", loginLimiter, async (req, res) => {
   try {
     const { username, pin } = req.body;
-    const user = verifyPin(username, pin);
+    if (!username || !pin) {
+      return res.status(400).json({ error: "Username and PIN required" });
+    }
+
+    const user = await verifyPin(username, pin);
 
     if (!user) {
       return res.status(401).json({ error: "Invalid username or PIN" });
     }
 
-    const sessionId = randomBytes(32).toString("hex");
-    createSession(sessionId, user.id);
+    const rawSessionId = randomBytes(32).toString("hex");
+    createSession(hashSessionId(rawSessionId), user.id);
 
     res.json({
       user: {
@@ -77,16 +113,16 @@ router.post("/auth/login", (req, res) => {
         display_name: user.display_name,
         avatar_emoji: user.avatar_emoji,
       },
-      sessionId,
+      sessionId: rawSessionId,
     });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch {
+    res.status(500).json({ error: "Login failed" });
   }
 });
 
 router.post("/auth/logout", (req, res) => {
-  const sessionId = req.headers["x-session-id"];
-  if (sessionId) deleteSession(sessionId);
+  const rawId = req.headers["x-session-id"];
+  if (rawId) deleteSession(hashSessionId(rawId));
   res.json({ success: true });
 });
 
@@ -108,15 +144,14 @@ router.get("/search", authenticateSession, async (req, res) => {
     if (!q || q.length < 2) {
       return res.json([]);
     }
-
     const results = await searchYouTube(q, type || "music");
     res.json(results);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch {
+    res.status(500).json({ error: "Search failed" });
   }
 });
 
-// Book search via Open Library (no API key required)
+// Book search via Open Library
 router.get("/search/books", authenticateSession, async (req, res) => {
   try {
     const { q } = req.query;
@@ -143,23 +178,29 @@ router.get("/search/books", authenticateSession, async (req, res) => {
     }));
 
     res.json(books);
-  } catch (error) {
-    console.error("Book search error:", error.message);
+  } catch {
     res.status(500).json({ error: "Book search failed" });
   }
 });
 
-// YouTube video info via oEmbed (no API key required)
+// YouTube video info via oEmbed
 router.get("/video-info", authenticateSession, async (req, res) => {
   try {
     const { url } = req.query;
     if (!url) return res.status(400).json({ error: "url required" });
 
-    const videoId = url.match(/(?:v=|youtu\.be\/)([^&?]+)/)?.[1];
+    if (!validateVideoUrl(url)) {
+      return res.status(400).json({ error: "Invalid video URL" });
+    }
+
+    const videoId = url.match(/(?:v=|youtu\.be\/)([^&?/]+)/)?.[1];
     if (!videoId) return res.status(400).json({ error: "Invalid YouTube URL" });
 
+    // Reconstruct a safe URL rather than forwarding the raw user URL
+    const safeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
     const oEmbed = await axios.get("https://www.youtube.com/oembed", {
-      params: { url, format: "json" },
+      params: { url: safeUrl, format: "json" },
       timeout: 5000,
     });
 
@@ -167,19 +208,18 @@ router.get("/video-info", authenticateSession, async (req, res) => {
       id: videoId,
       title: oEmbed.data.title
         .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'),
-      url,
+        .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"),
+      url: safeUrl,
       thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
       duration: "Unknown",
     });
-  } catch (error) {
-    // Fallback if oEmbed fails (e.g. private video)
-    const videoId = req.query.url?.match(/(?:v=|youtu\.be\/)([^&?]+)/)?.[1];
+  } catch {
+    const videoId = req.query.url?.match(/(?:v=|youtu\.be\/)([^&?/]+)/)?.[1];
     if (videoId) {
       return res.json({
         id: videoId,
         title: "",
-        url: req.query.url,
+        url: `https://www.youtube.com/watch?v=${videoId}`,
         thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
         duration: "Unknown",
       });
@@ -193,6 +233,15 @@ router.post("/requests", authenticateSession, (req, res) => {
   try {
     const { profile, title, url, type, searchQuery, thumbnail, duration, direct } =
       req.body;
+
+    if (!title || !type || !profile) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    // Validate URL if provided
+    if (url && type !== "audiobook" && !validateVideoUrl(url)) {
+      return res.status(400).json({ error: "Invalid video URL" });
+    }
 
     // Check for blocked keywords
     const blockedKeywords = getBlockedKeywords();
@@ -228,8 +277,8 @@ router.post("/requests", authenticateSession, (req, res) => {
     }
 
     res.json(request);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch {
+    res.status(500).json({ error: "Failed to create request" });
   }
 });
 
@@ -240,8 +289,8 @@ router.get("/requests", authenticateSession, (req, res) => {
     } else {
       res.json(getRequestsByProfile(req.user.profile));
     }
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch requests" });
   }
 });
 
@@ -252,8 +301,8 @@ router.get(
   (req, res) => {
     try {
       res.json(getPendingRequests());
-    } catch (error) {
-      res.status(500).json({ error: error.message });
+    } catch {
+      res.status(500).json({ error: "Failed to fetch pending requests" });
     }
   },
 );
@@ -265,13 +314,12 @@ router.post(
   (req, res) => {
     try {
       const request = approveRequest(req.params.id, req.user.id);
-      // Audiobooks are sourced manually — skip auto-download
       if (request.type !== "audiobook") {
         downloadAndUpload(request).catch(console.error);
       }
       res.json(request);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
+    } catch {
+      res.status(500).json({ error: "Failed to approve request" });
     }
   },
 );
@@ -285,8 +333,8 @@ router.post(
       const { reason } = req.body;
       const request = rejectRequest(req.params.id, reason || "Not specified");
       res.json(request);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
+    } catch {
+      res.status(500).json({ error: "Failed to reject request" });
     }
   },
 );
@@ -303,8 +351,8 @@ router.post(
         return res.status(400).json({ error: "Only audiobook requests can be marked uploaded" });
       const updated = updateRequestStatus(req.params.id, "completed");
       res.json(updated);
-    } catch (error) {
-      res.status(500).json({ error: error.message });
+    } catch {
+      res.status(500).json({ error: "Failed to update request" });
     }
   },
 );
@@ -317,8 +365,8 @@ router.delete(
     try {
       deleteRequest(req.params.id);
       res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
+    } catch {
+      res.status(500).json({ error: "Failed to delete request" });
     }
   },
 );
@@ -327,8 +375,8 @@ router.delete(
 router.get("/analytics", authenticateSession, requireParent, (req, res) => {
   try {
     res.json(getAnalytics());
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch analytics" });
   }
 });
 
@@ -340,8 +388,8 @@ router.get(
   (req, res) => {
     try {
       res.json(getBlockedKeywords());
-    } catch (error) {
-      res.status(500).json({ error: error.message });
+    } catch {
+      res.status(500).json({ error: "Failed to fetch blocked keywords" });
     }
   },
 );
@@ -353,10 +401,13 @@ router.post(
   (req, res) => {
     try {
       const { keyword } = req.body;
+      if (!keyword || typeof keyword !== "string") {
+        return res.status(400).json({ error: "Invalid keyword" });
+      }
       addBlockedKeyword(keyword, req.user.id);
       res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
+    } catch {
+      res.status(500).json({ error: "Failed to add keyword" });
     }
   },
 );
@@ -369,25 +420,43 @@ router.delete(
     try {
       removeBlockedKeyword(req.params.id);
       res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
+    } catch {
+      res.status(500).json({ error: "Failed to remove keyword" });
     }
   },
 );
 
-// Audio stream for mini player — header auth only, no query-param token
+// Audio stream — header auth, range request support
 router.get("/stream/:profile/:filename", (req, res) => {
-  const sessionId = req.headers["x-session-id"];
-  if (!sessionId) return res.status(401).json({ error: "Not authenticated" });
-  const session = getSession(sessionId);
+  const rawId = req.headers["x-session-id"];
+  if (!rawId) return res.status(401).json({ error: "Not authenticated" });
+  const session = getSession(hashSessionId(rawId));
   if (!session) return res.status(401).json({ error: "Not authenticated" });
 
   const { profile, filename } = req.params;
   if (!["yoto", "ipod"].includes(profile)) {
     return res.status(400).json({ error: "Invalid profile" });
   }
+
+  // Children can only stream their own profile
+  if (session.role !== "parent" && session.profile !== profile) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+
   const safeName = path.basename(filename);
+  // Reject any path traversal attempts
+  if (safeName !== filename || safeName.includes("..")) {
+    return res.status(400).json({ error: "Invalid filename" });
+  }
+
   const filePath = path.join(DOWNLOAD_DIR, profile, safeName);
+  // Ensure resolved path is inside the expected directory
+  const resolved = path.resolve(filePath);
+  const allowed = path.resolve(path.join(DOWNLOAD_DIR, profile));
+  if (!resolved.startsWith(allowed + path.sep) && resolved !== allowed) {
+    return res.status(400).json({ error: "Invalid filename" });
+  }
+
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: "File not found" });
   }
@@ -397,9 +466,18 @@ router.get("/stream/:profile/:filename", (req, res) => {
 
   if (range) {
     const [startStr, endStr] = range.replace(/bytes=/, "").split("-");
-    const start = parseInt(startStr, 10);
-    const end = endStr ? parseInt(endStr, 10) : stat.size - 1;
+    const startRaw = parseInt(startStr, 10);
+    const endRaw = endStr ? parseInt(endStr, 10) : stat.size - 1;
+
+    if (isNaN(startRaw) || isNaN(endRaw) || startRaw < 0 || endRaw >= stat.size || startRaw > endRaw) {
+      res.status(416).set("Content-Range", `bytes */${stat.size}`).end();
+      return;
+    }
+
+    const start = startRaw;
+    const end = Math.min(endRaw, stat.size - 1);
     const chunksize = end - start + 1;
+
     res.writeHead(206, {
       "Content-Range": `bytes ${start}-${end}/${stat.size}`,
       "Accept-Ranges": "bytes",
@@ -424,31 +502,53 @@ router.get("/downloads/:profile/:filename", authenticateSession, (req, res) => {
     if (!["yoto", "ipod"].includes(profile)) {
       return res.status(400).json({ error: "Invalid profile" });
     }
+
+    // Children can only download their own profile
+    if (req.user.role !== "parent" && req.user.profile !== profile) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
     const safeName = path.basename(filename);
+    if (safeName !== filename || safeName.includes("..")) {
+      return res.status(400).json({ error: "Invalid filename" });
+    }
+
     const filePath = path.join(DOWNLOAD_DIR, profile, safeName);
+    const resolved = path.resolve(filePath);
+    const allowed = path.resolve(path.join(DOWNLOAD_DIR, profile));
+    if (!resolved.startsWith(allowed + path.sep) && resolved !== allowed) {
+      return res.status(400).json({ error: "Invalid filename" });
+    }
+
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: "File not found" });
     }
     res.download(filePath, safeName);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch {
+    res.status(500).json({ error: "Download failed" });
   }
 });
 
-// Get request status (for real-time updates)
+// Get request status — enforce ownership
 router.get("/requests/:id/status", authenticateSession, (req, res) => {
   try {
     const request = getRequestById(req.params.id);
     if (!request) {
       return res.status(404).json({ error: "Request not found" });
     }
+
+    // Children can only see their own profile's requests
+    if (req.user.role !== "parent" && request.profile !== req.user.profile) {
+      return res.status(404).json({ error: "Request not found" });
+    }
+
     res.json({
       status: request.status,
       download_url: request.internxt_url,
       error_message: request.error_message,
     });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch status" });
   }
 });
 

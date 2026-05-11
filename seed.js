@@ -1,19 +1,26 @@
+import 'dotenv/config';
 import { createUser } from './server/database.js';
 
-console.log('Seeding database with PIN-based auth...');
+const parentPin = process.env.PARENT_PIN;
+const cristinaPin = process.env.CRISTINA_PIN;
+const isabellaPin = process.env.ISABELLA_PIN;
+
+if (!parentPin || !cristinaPin || !isabellaPin) {
+  console.error('Error: PARENT_PIN, CRISTINA_PIN and ISABELLA_PIN must be set in .env');
+  process.exit(1);
+}
+
+console.log('Seeding database...');
 
 try {
-  // Create parent account
-  createUser('parent', '999999', 'parent', null, 'Parent', '👨‍👩‍👧‍👦');
-  console.log('✅ Parent: username=parent, PIN=999999');
+  createUser('parent', parentPin, 'parent', null, 'Parent', '👨‍👩‍👧‍👦');
+  console.log('✅ Parent account created');
 
-  // Create Cristina's Yoto account
-  createUser('cristina', '123456', 'child', 'yoto', 'Cristina', '👧');
-  console.log('✅ Cristina (Yoto): username=cristina, PIN=123456');
+  createUser('cristina', cristinaPin, 'child', 'yoto', 'Cristina', '👧');
+  console.log('✅ Cristina (Yoto) account created');
 
-  // Create Isabella's iPod account
-  createUser('isabella', '654321', 'child', 'ipod', 'Isabella', '👩');
-  console.log('✅ Isabella (iPod): username=isabella, PIN=654321');
+  createUser('isabella', isabellaPin, 'child', 'ipod', 'Isabella', '👩');
+  console.log('✅ Isabella (iPod) account created');
 
   console.log('\n🎉 Database seeded successfully!');
 } catch (error) {
