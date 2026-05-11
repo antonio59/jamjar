@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import { randomBytes } from "crypto";
 import { fileURLToPath } from "url";
 import axios from "axios";
 import {
@@ -64,8 +65,7 @@ router.post("/auth/login", (req, res) => {
       return res.status(401).json({ error: "Invalid username or PIN" });
     }
 
-    const sessionId = Math.random().toString(36).substring(2, 15) +
-      Math.random().toString(36).substring(2, 15);
+    const sessionId = randomBytes(32).toString("hex");
     createSession(sessionId, user.id);
 
     res.json({
@@ -375,10 +375,9 @@ router.delete(
   },
 );
 
-// Audio stream for mini player — accepts session token via query param so
-// the HTML5 <audio> element can stream without custom headers
+// Audio stream for mini player — header auth only, no query-param token
 router.get("/stream/:profile/:filename", (req, res) => {
-  const sessionId = req.headers["x-session-id"] || req.query.token;
+  const sessionId = req.headers["x-session-id"];
   if (!sessionId) return res.status(401).json({ error: "Not authenticated" });
   const session = getSession(sessionId);
   if (!session) return res.status(401).json({ error: "Not authenticated" });

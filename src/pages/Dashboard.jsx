@@ -376,16 +376,50 @@ function RequestCard({ request, userRole, sessionId, onDelete, onMarkUploaded })
 // ─── Mini Player ─────────────────────────────────────────────────────────────
 
 function MiniPlayer({ request, sessionId }) {
-  const filename = request.internxt_url.split("/").pop();
-  const streamUrl = `/api/stream/${request.profile}/${filename}?token=${encodeURIComponent(sessionId)}`;
+  const [blobUrl, setBlobUrl] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    return () => { if (blobUrl) URL.revokeObjectURL(blobUrl); };
+  }, [blobUrl]);
+
+  const handleLoad = async () => {
+    if (blobUrl || loading) return;
+    setLoading(true);
+    try {
+      const res = await fetch(request.internxt_url, {
+        headers: { "X-Session-Id": sessionId },
+      });
+      if (!res.ok) throw new Error("fetch failed");
+      const blob = await res.blob();
+      setBlobUrl(URL.createObjectURL(blob));
+    } catch {
+      // silently fail — download button still works
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (blobUrl) {
+    return (
+      <audio
+        controls
+        autoPlay
+        src={blobUrl}
+        className="w-full max-w-xs h-8"
+        style={{ colorScheme: "normal" }}
+      />
+    );
+  }
+
   return (
-    <audio
-      controls
-      src={streamUrl}
-      preload="none"
-      className="w-full h-8 max-w-xs"
-      style={{ colorScheme: "normal" }}
-    />
+    <button
+      onClick={handleLoad}
+      disabled={loading}
+      className="text-xs text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-50 flex items-center gap-1"
+    >
+      {loading ? "Loading…" : "▶ Preview"}
+    </button>
   );
 }
 
