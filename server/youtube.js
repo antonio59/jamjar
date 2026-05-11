@@ -63,6 +63,28 @@ export async function getPlaylistTracks(playlistUrl) {
   }
 }
 
+function decodeHtmlEntities(str) {
+  return str
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&apos;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#x2F;/g, '/');
+}
+
+function parseIsoDuration(iso) {
+  const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return null;
+  const h = parseInt(match[1] || 0);
+  const m = parseInt(match[2] || 0);
+  const s = parseInt(match[3] || 0);
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 function formatDuration(seconds) {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -103,24 +125,40 @@ export async function searchYouTube(query, type = 'music') {
   if (YOUTUBE_API_KEY) {
     try {
       const safeSearch = type === 'music' ? 'moderate' : 'strict';
-      const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
+      const searchResponse = await axios.get('https://www.googleapis.com/youtube/v3/search', {
         params: {
           part: 'snippet',
           q: query,
           type: 'video',
           maxResults: 10,
-          safeSearch: safeSearch,
+          safeSearch,
           videoDuration: type === 'music' ? 'short' : 'long',
           key: YOUTUBE_API_KEY,
         },
       });
-      
-      return response.data.items.map(item => ({
+
+      const items = searchResponse.data.items;
+      const videoIds = items.map(item => item.id.videoId).join(',');
+
+      // Fetch durations in one batch call
+      let durationMap = {};
+      try {
+        const detailsResponse = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
+          params: { part: 'contentDetails', id: videoIds, key: YOUTUBE_API_KEY },
+        });
+        for (const v of detailsResponse.data.items) {
+          durationMap[v.id] = parseIsoDuration(v.contentDetails.duration) || '';
+        }
+      } catch {
+        // Duration fetch failed — continue without it
+      }
+
+      return items.map(item => ({
         id: item.id.videoId,
-        title: item.snippet.title,
+        title: decodeHtmlEntities(item.snippet.title),
         url: `https://youtube.com/watch?v=${item.id.videoId}`,
         thumbnail: item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
-        duration: 'Unknown',
+        duration: durationMap[item.id.videoId] || '',
       }));
     } catch (error) {
       console.error('YouTube API error:', error.message);

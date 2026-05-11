@@ -62,9 +62,18 @@ db.exec(`
     FOREIGN KEY (added_by) REFERENCES users(id)
   );
   
+  CREATE TABLE IF NOT EXISTS sessions (
+    session_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
   CREATE INDEX IF NOT EXISTS idx_requests_status ON requests(status);
   CREATE INDEX IF NOT EXISTS idx_requests_profile ON requests(profile);
   CREATE INDEX IF NOT EXISTS idx_requests_created ON requests(created_at);
+  CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 `);
 
 // Helper functions
@@ -213,6 +222,35 @@ export function addBlockedKeyword(keyword, addedBy) {
 export function removeBlockedKeyword(id) {
   const stmt = db.prepare('DELETE FROM blocked_keywords WHERE id = ?');
   stmt.run(id);
+}
+
+// Session management (persistent, survives server restarts)
+const SESSION_TTL_DAYS = 30;
+
+export function createSession(sessionId, userId) {
+  const stmt = db.prepare(
+    `INSERT OR REPLACE INTO sessions (session_id, user_id, expires_at)
+     VALUES (?, ?, datetime('now', '+${SESSION_TTL_DAYS} days'))`
+  );
+  stmt.run(sessionId, userId);
+}
+
+export function getSession(sessionId) {
+  const stmt = db.prepare(
+    `SELECT s.session_id, u.id, u.username, u.role, u.profile, u.display_name, u.avatar_emoji
+     FROM sessions s JOIN users u ON s.user_id = u.id
+     WHERE s.session_id = ? AND s.expires_at > datetime('now')`
+  );
+  return stmt.get(sessionId);
+}
+
+export function deleteSession(sessionId) {
+  db.prepare('DELETE FROM sessions WHERE session_id = ?').run(sessionId);
+}
+
+// Purge expired sessions (call periodically)
+export function purgeExpiredSessions() {
+  db.prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
 }
 
 export default db;

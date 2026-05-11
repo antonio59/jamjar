@@ -24,6 +24,22 @@ const useStore = create((set, get) => ({
   hideToast: () => set({ toast: null }),
   
   // Actions
+  restoreSession: async () => {
+    const { sessionId } = get();
+    if (!sessionId) return false;
+    try {
+      const response = await axios.get(`${API_URL}/auth/me`, {
+        headers: { 'X-Session-Id': sessionId },
+      });
+      set({ user: response.data, isAuthenticated: true });
+      return true;
+    } catch {
+      localStorage.removeItem('sessionId');
+      set({ user: null, sessionId: null, isAuthenticated: false });
+      return false;
+    }
+  },
+
   login: async (username, pin) => {
     try {
       const response = await axios.post(`${API_URL}/auth/login`, { username, pin });
@@ -62,6 +78,67 @@ const useStore = create((set, get) => ({
       console.error('Search error:', error);
       return [];
     }
+  },
+
+  searchBooks: async (query) => {
+    const { sessionId } = get();
+    if (!sessionId) return [];
+    try {
+      const response = await axios.get(`${API_URL}/search/books`, {
+        params: { q: query },
+        headers: { 'X-Session-Id': sessionId },
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Book search error:', error);
+      return [];
+    }
+  },
+
+  getVideoInfo: async (url) => {
+    const { sessionId } = get();
+    if (!sessionId) return null;
+    try {
+      const response = await axios.get(`${API_URL}/video-info`, {
+        params: { url },
+        headers: { 'X-Session-Id': sessionId },
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Video info error:', error);
+      return null;
+    }
+  },
+
+  markUploaded: async (id) => {
+    const { sessionId } = get();
+    const response = await axios.post(`${API_URL}/requests/${id}/mark-uploaded`, {}, {
+      headers: { 'X-Session-Id': sessionId },
+    });
+    return response.data;
+  },
+
+  getBlockedKeywords: async () => {
+    const { sessionId } = get();
+    if (!sessionId) return [];
+    const response = await axios.get(`${API_URL}/blocked-keywords`, {
+      headers: { 'X-Session-Id': sessionId },
+    });
+    return response.data;
+  },
+
+  addBlockedKeyword: async (keyword) => {
+    const { sessionId } = get();
+    await axios.post(`${API_URL}/blocked-keywords`, { keyword }, {
+      headers: { 'X-Session-Id': sessionId },
+    });
+  },
+
+  removeBlockedKeyword: async (id) => {
+    const { sessionId } = get();
+    await axios.delete(`${API_URL}/blocked-keywords/${id}`, {
+      headers: { 'X-Session-Id': sessionId },
+    });
   },
   
   createRequest: async (data) => {
