@@ -378,6 +378,10 @@ function RequestCard({ request, userRole, sessionId, onDelete, onMarkUploaded })
 function MiniPlayer({ request, sessionId }) {
   const [blobUrl, setBlobUrl] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Derive stream URL from internxt_url: /api/downloads/profile/file → /api/stream/profile/file
+  const streamUrl = request.internxt_url?.replace("/api/downloads/", "/api/stream/");
 
   useEffect(() => {
     return () => { if (blobUrl) URL.revokeObjectURL(blobUrl); };
@@ -386,15 +390,16 @@ function MiniPlayer({ request, sessionId }) {
   const handleLoad = async () => {
     if (blobUrl || loading) return;
     setLoading(true);
+    setError(null);
     try {
-      const res = await fetch(request.internxt_url, {
+      const res = await fetch(streamUrl, {
         headers: { "X-Session-Id": sessionId },
       });
-      if (!res.ok) throw new Error("fetch failed");
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       const blob = await res.blob();
       setBlobUrl(URL.createObjectURL(blob));
-    } catch {
-      // silently fail — download button still works
+    } catch (err) {
+      setError(err.message || "Preview failed");
     } finally {
       setLoading(false);
     }
@@ -413,13 +418,18 @@ function MiniPlayer({ request, sessionId }) {
   }
 
   return (
-    <button
-      onClick={handleLoad}
-      disabled={loading}
-      className="text-xs text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-50 flex items-center gap-1"
-    >
-      {loading ? "Loading…" : "▶ Preview"}
-    </button>
+    <div className="flex items-center gap-2">
+      <button
+        onClick={handleLoad}
+        disabled={loading}
+        className="text-xs text-purple-600 dark:text-purple-400 hover:underline disabled:opacity-50 flex items-center gap-1"
+      >
+        {loading ? "Loading…" : "▶ Preview"}
+      </button>
+      {error && (
+        <span className="text-xs text-red-500 dark:text-red-400">{error}</span>
+      )}
+    </div>
   );
 }
 
