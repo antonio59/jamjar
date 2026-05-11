@@ -33,6 +33,12 @@ const __dirname = path.dirname(__filename);
 const DOWNLOAD_DIR =
   process.env.DOWNLOAD_DIR || path.join(__dirname, "../../downloads");
 
+const TITLE_NOISE = /[\[(][\s\w]*(official\s*(lyric|music|audio|hd|4k)?(\s*video)?|lyric[s]?|audio|hd|4k|explicit|remaster(ed)?|visuali[sz]er|performance\s*video|topic)[\s\w]*[\])]/gi;
+
+function cleanTitle(title) {
+  return title.replace(TITLE_NOISE, "").replace(/\s{2,}/g, " ").trim();
+}
+
 const router = express.Router();
 
 // Purge expired sessions on startup and every 6 hours
@@ -238,6 +244,8 @@ router.post("/requests", authenticateSession, (req, res) => {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
+    const cleanedTitle = cleanTitle(title);
+
     // Validate URL if provided
     if (url && type !== "audiobook" && !validateVideoUrl(url)) {
       return res.status(400).json({ error: "Invalid video URL" });
@@ -260,7 +268,7 @@ router.post("/requests", authenticateSession, (req, res) => {
     let request = createRequest(
       req.user.id,
       profile,
-      title,
+      cleanedTitle,
       url,
       type,
       searchQuery,
