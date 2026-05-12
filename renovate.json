@@ -1,0 +1,55 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+
+  "minimumReleaseAge": "3 days",
+  "internalChecksFilter": "strict",
+
+  "schedule": ["before 6am on Monday"],
+
+  "packageRules": [
+    {
+      "description": "Security patches — apply immediately, no age wait",
+      "matchUpdateTypes": ["patch"],
+      "matchCategories": ["security"],
+      "minimumReleaseAge": "0 days",
+      "automerge": false
+    },
+    {
+      "description": "Group all non-major production dependencies",
+      "matchDepTypes": ["dependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "production dependencies"
+    },
+    {
+      "description": "Group all dev dependencies",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "dev dependencies"
+    },
+    {
+      "description": "Major updates — open individual PRs, never automerge",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "GitHub Actions — pin to SHA, 3-day age wait",
+      "matchManagers": ["github-actions"],
+      "minimumReleaseAge": "3 days",
+      "pinDigests": true
+    }
+  ],
+
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "minimumReleaseAge": "0 days",
+    "labels": ["security"]
+  },
+
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2,
+  "labels": ["dependencies"],
+  "assignees": ["antonio59"],
+  "reviewers": ["antonio59"]
+}
