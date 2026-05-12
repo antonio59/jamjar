@@ -122,7 +122,7 @@ systemctl stop jamjar
 ```bash
 cd /opt/jamjar
 git pull origin main
-npm install
+pnpm install
 systemctl restart jamjar
 ```
 

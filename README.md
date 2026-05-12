@@ -17,15 +17,15 @@ Full-stack family music request app with Express, SQLite, and React.
 ## Quick Start
 
 ```bash
-# Install dependencies
-npm install
+# Install dependencies (using pnpm)
+pnpm install
 
 # Start both frontend and backend
-npm run dev
+pnpm dev
 
 # Or separately:
-npm run dev:server   # Backend on :3001
-npm run dev:vite     # Frontend on :3000
+pnpm dev:server   # Backend on :3001
+pnpm dev:vite     # Frontend on :3000
 ```
 
 ## First-Time Setup
@@ -73,9 +73,9 @@ See `DEPLOY_VPS.md` for step-by-step manual instructions.
 
 Run on a Raspberry Pi or old laptop:
 ```bash
-npm install
-npm run build
-npm start
+pnpm install
+pnpm build
+pnpm start
 ```
 
 Use Cloudflare Tunnel for public access (no port forwarding needed).

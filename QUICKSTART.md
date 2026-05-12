@@ -10,14 +10,14 @@
    cd jamjar
    ```
 
-2. **Install dependencies:**
+2. **Install dependencies (using pnpm):**
    ```bash
-   npm install
+   pnpm install
    ```
 
 3. **Start the app:**
    ```bash
-   npm run dev
+   pnpm dev
    ```
 
 4. **Open your browser:**
@@ -110,8 +110,8 @@ This app needs a Node.js backend (not static hosting). Recommended platforms:
 
 1. Create a "Web Service" on Render
 2. Connect GitHub repo
-3. Build command: `npm install && npm run build`
-4. Start command: `npm start`
+3. Build command: `pnpm install && pnpm build`
+4. Start command: `pnpm start`
 5. Add environment variables
 
 ## Troubleshooting
@@ -125,7 +125,7 @@ lsof -ti:3001 | xargs kill
 **Database errors:**
 ```bash
 rm -rf data/
-node seed.js
+pnpm seed
 ```
 
 **Can't search:**

@@ -29,8 +29,8 @@ Kids' Devices → VPS (Express + SQLite) → Internxt (file storage)
 
 ```bash
 cd ~/jamjar
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Open http://localhost:3000
@@ -108,7 +108,7 @@ NODE_ENV=production
 
 ## Customization
 
-**Change PINs:** Edit `seed.js` → re-run `npm run seed`
+**Change PINs:** Edit `seed.js` → re-run `pnpm seed`
 
 **Add blocked keywords:** Parent dashboard → "Blocked Keywords" section
 
