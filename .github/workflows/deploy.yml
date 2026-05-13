@@ -24,7 +24,7 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: ppnpm install
+        run: pnpm install
 
       - name: Build frontend
         run: pnpm run build
@@ -50,7 +50,7 @@ jobs:
             set -e
             cd /opt/jamjar
             git pull origin main
-            ppnpm install
+            pnpm install
             pnpm run build
             sudo systemctl restart jamjar
             echo "✅ Deploy complete"

@@ -22,7 +22,7 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: ppnpm install
+        run: pnpm install
 
       - name: Build frontend
         run: pnpm run build
