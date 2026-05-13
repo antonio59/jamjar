@@ -1,5 +1,4 @@
 import 'dotenv/config';
-import * as Sentry from '@sentry/node';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -82,7 +81,6 @@ app.get('/{*path}', (req, res) => {
   });
 });
 
-Sentry.setupExpressErrorHandler(app);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
