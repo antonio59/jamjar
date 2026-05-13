@@ -21,7 +21,7 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: ppnpm install
 
       - name: Build frontend
         run: pnpm run build

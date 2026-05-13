@@ -23,7 +23,7 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: ppnpm install
 
       - name: Build frontend
         run: pnpm run build
@@ -49,7 +49,7 @@ jobs:
             set -e
             cd /opt/jamjar
             git pull origin main
-            pnpm install --frozen-lockfile
+            ppnpm install
             pnpm run build
             sudo systemctl restart jamjar
             echo "✅ Deploy complete"
