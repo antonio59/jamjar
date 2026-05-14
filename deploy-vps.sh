@@ -26,13 +26,18 @@ else
     echo "✅ User already exists"
 fi
 
-echo -e "${YELLOW}Step 2: Installing system dependencies...${NC}"
+echo -e "${YELLOW}Step 2: Installing Node.js 24...${NC}"
 apt-get update -qq
-apt-get install -y -qq nodejs npm nginx certbot python3-certbot-nginx yt-dlp > /dev/null 2>&1
+apt-get install -y -qq ca-certificates curl gnupg > /dev/null 2>&1
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" > /etc/apt/sources.list.d/nodesource.list
+apt-get update -qq
+apt-get install -y -qq nodejs nginx certbot python3-certbot-nginx yt-dlp > /dev/null 2>&1
 
-# Install pnpm via corepack
+# Enable pnpm via corepack
 corepack enable pnpm
-echo "✅ Dependencies installed"
+echo "✅ Node.js $(node -v) installed, pnpm enabled"
 
 echo -e "${YELLOW}Step 3: Setting up application directory...${NC}"
 mkdir -p "$APP_DIR"
