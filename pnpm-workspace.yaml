@@ -1,9 +1,4 @@
 packages:
-  - .
-
-pnpm:
-  autoInstallPeers: true
-  strictPeerDependencies: false
-  allowBuilds:
-    better-sqlite3: true
-  packageImportMethod: clone-or-copy
+  - "."
+allowBuilds:
+  better-sqlite3: true

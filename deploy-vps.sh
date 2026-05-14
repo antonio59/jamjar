@@ -29,6 +29,9 @@ fi
 echo -e "${YELLOW}Step 2: Installing system dependencies...${NC}"
 apt-get update -qq
 apt-get install -y -qq nodejs npm nginx certbot python3-certbot-nginx yt-dlp > /dev/null 2>&1
+
+# Install pnpm via corepack
+corepack enable pnpm
 echo "✅ Dependencies installed"
 
 echo -e "${YELLOW}Step 3: Setting up application directory...${NC}"
@@ -46,7 +49,7 @@ else
 fi
 
 echo -e "${YELLOW}Step 4: Installing Node.js dependencies...${NC}"
-npm install
+pnpm install
 echo "✅ Dependencies installed"
 
 echo -e "${YELLOW}Step 5: Creating environment file...${NC}"
@@ -71,7 +74,7 @@ else
 fi
 
 echo -e "${YELLOW}Step 6: Building frontend...${NC}"
-npm run build
+pnpm run build
 echo "✅ Frontend built"
 
 echo -e "${YELLOW}Step 7: Seeding database...${NC}"
