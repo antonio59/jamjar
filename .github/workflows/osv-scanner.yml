@@ -19,10 +19,10 @@ jobs:
     name: Vulnerability Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Run OSV Scanner
-        uses: google/osv-scanner-action/osv-scanner-action@v2.3.5
+        uses: google/osv-scanner-action/osv-scanner-action@v2.3.8
         with:
           scan-args: |
             --recursive
@@ -32,7 +32,7 @@ jobs:
         continue-on-error: true
 
       - name: Generate SARIF
-        uses: google/osv-scanner-action/osv-reporter-action@v2.3.5
+        uses: google/osv-scanner-action/osv-reporter-action@v2.3.8
         with:
           scan-args: |
             --output=results.sarif
