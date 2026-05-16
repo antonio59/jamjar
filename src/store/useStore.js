@@ -3,6 +3,24 @@ import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
+// Translate technical API errors into kid-friendly messages
+function friendlyError(error) {
+  if (error.code === 'ERR_NETWORK') {
+    return 'The app is not responding right now. Please try again or ask a grown-up for help.';
+  }
+  const status = error.response?.status;
+  if (status === 401 || status === 403) {
+    return 'Please ask a grown-up to log in again to continue.';
+  }
+  if (status === 429) {
+    return 'You\'re going too fast! Please wait a minute and try again.';
+  }
+  if (status >= 500) {
+    return 'Something went wrong on our end. Please try again or ask a grown-up for help.';
+  }
+  return error.response?.data?.error || error.message || 'Something went wrong. Please try again.';
+}
+
 const useStore = create((set, get) => ({
   // Auth state
   user: null,
@@ -48,8 +66,17 @@ const useStore = create((set, get) => ({
       set({ user, sessionId, isAuthenticated: true });
       return { success: true };
     } catch (error) {
-      const message = error.response?.data?.error 
-        || (error.code === 'ERR_NETWORK' ? 'Cannot reach server. Please check your connection.' : 'Login failed');
+      const raw = error.response?.data?.error;
+      let message;
+      if (error.code === 'ERR_NETWORK') {
+        message = 'The app is not responding right now. Please try again or ask a grown-up for help.';
+      } else if (error.response?.status === 401) {
+        message = 'That username or PIN is wrong. Please try again!';
+      } else if (error.response?.status === 429) {
+        message = 'Too many attempts! Please wait a few minutes and try again.';
+      } else {
+        message = raw || 'Something went wrong. Please try again.';
+      }
       return { success: false, error: message };
     }
   },
@@ -176,9 +203,9 @@ const useStore = create((set, get) => ({
     return response.data;
   },
   
-  rejectRequest: async (id) => {
+  rejectRequest: async (id, reason = 'Not appropriate') => {
     const { sessionId } = get();
-    const response = await axios.post(`${API_URL}/requests/${id}/reject`, {}, {
+    const response = await axios.post(`${API_URL}/requests/${id}/reject`, { reason }, {
       headers: { 'X-Session-Id': sessionId },
     });
     return response.data;
@@ -212,6 +239,50 @@ const useStore = create((set, get) => ({
       headers: { 'X-Session-Id': sessionId },
     });
     return response.data;
+  },
+
+  retryDownload: async (id) => {
+    const { sessionId } = get();
+    const response = await axios.post(`${API_URL}/requests/${id}/retry`, { force: true }, {
+      headers: { 'X-Session-Id': sessionId },
+    });
+    return response.data;
+  },
+
+  retryAllDummy: async () => {
+    const { sessionId } = get();
+    const response = await axios.post(`${API_URL}/requests/retry-all-dummy`, {}, {
+      headers: { 'X-Session-Id': sessionId },
+    });
+    return response.data;
+  },
+
+  checkDuplicate: async (title) => {
+    const { sessionId } = get();
+    if (!sessionId) return 0;
+    try {
+      const response = await axios.get(`${API_URL}/requests/check-duplicate`, {
+        params: { title },
+        headers: { 'X-Session-Id': sessionId },
+      });
+      return response.data.count;
+    } catch {
+      return 0;
+    }
+  },
+
+  getArtists: async (profile) => {
+    const { sessionId } = get();
+    if (!sessionId) return [];
+    try {
+      const response = await axios.get(`${API_URL}/library/artists`, {
+        params: profile ? { profile } : {},
+        headers: { 'X-Session-Id': sessionId },
+      });
+      return response.data;
+    } catch {
+      return [];
+    }
   },
 }));
 

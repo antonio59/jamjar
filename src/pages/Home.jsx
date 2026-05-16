@@ -1,14 +1,14 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import useStore from "../store/useStore";
-import { Music, Book, CheckCircle, Search, Link, X } from "lucide-react";
+import { Music, Book, CheckCircle, Search, Link, X, AlertTriangle } from "lucide-react";
 
 function isYouTubeUrl(str) {
   return /youtube\.com|youtu\.be/.test(str);
 }
 
 export default function Home() {
-  const { user, createRequest, search, searchBooks, getVideoInfo, showToast } =
+  const { user, createRequest, search, searchBooks, getVideoInfo, checkDuplicate, showToast } =
     useStore();
 
   const isParent = user.role === "parent";
@@ -28,6 +28,7 @@ export default function Home() {
   const [searchResults, setSearchResults] = useState([]);
   const [selectedTrack, setSelectedTrack] = useState(null);
   const [searching, setSearching] = useState(false);
+  const [duplicateCount, setDuplicateCount] = useState(0);
 
   // URL mode state
   const [urlInput, setUrlInput] = useState("");
@@ -36,6 +37,12 @@ export default function Home() {
   const [urlLoading, setUrlLoading] = useState(false);
   const [urlError, setUrlError] = useState(null);
   const urlDebounceRef = useRef(null);
+
+  // Check for duplicates when a track is selected
+  useEffect(() => {
+    if (!selectedTrack) { setDuplicateCount(0); return; }
+    checkDuplicate(selectedTrack.title).then(setDuplicateCount);
+  }, [selectedTrack, checkDuplicate]);
 
   const resetAll = () => {
     setSearchQuery("");
@@ -171,7 +178,11 @@ export default function Home() {
         resetAll();
       }, 3000);
     } catch (err) {
-      showToast(err.response?.data?.error || "Failed to send request", "error");
+      const status = err.response?.status;
+      let msg = err.response?.data?.error || "Something went wrong. Please try again.";
+      if (status === 401 || status === 403) msg = "Please ask a grown-up to log in again.";
+      if (status === 429) msg = "You're going too fast! Please wait a moment and try again.";
+      showToast(msg, "error");
     }
   };
 
@@ -183,6 +194,7 @@ export default function Home() {
         : isYouTubeUrl(urlInput);
 
   if (submitted) {
+    const isAudiobook = trackType === "audiobook";
     return (
       <motion.div
         initial={{ scale: 0.8, opacity: 0 }}
@@ -193,13 +205,24 @@ export default function Home() {
         <h2 className="text-3xl font-bold text-green-800 dark:text-green-300 mb-3">
           {isParent ? "Added! 🎉" : "Request Sent! 🎉"}
         </h2>
-        <p className="text-green-700 dark:text-green-400 text-lg">
+        <p className="text-green-700 dark:text-green-400 text-lg mb-6">
           {isParent
-            ? trackType === "audiobook"
+            ? isAudiobook
               ? "Audiobook request logged — don't forget to upload the file."
               : "Downloading now. Check the dashboard for progress."
-            : "A parent will review your request soon."}
+            : isAudiobook
+              ? "A parent will find the audiobook for you soon!"
+              : "A parent will review your request soon."}
         </p>
+        {isAudiobook && (
+          <button
+            onClick={() => { setSubmitted(false); resetAll(); }}
+            className="inline-flex items-center gap-2 bg-green-700 hover:bg-green-800 text-white font-medium px-5 py-2.5 rounded-xl transition-colors"
+          >
+            <Book className="w-4 h-4" />
+            Request another book
+          </button>
+        )}
       </motion.div>
     );
   }
@@ -344,7 +367,17 @@ export default function Home() {
                   <MusicResultItem result={r} />
                 )}
               />
-              {selectedTrack && <SelectedMusicPreview track={selectedTrack} />}
+              {selectedTrack && (
+                <>
+                  <SelectedMusicPreview track={selectedTrack} />
+                  {duplicateCount > 0 && (
+                    <div className="flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg text-sm text-amber-700 dark:text-amber-400">
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                      <span>This song has already been downloaded {duplicateCount} time{duplicateCount !== 1 ? "s" : ""}. You can still add it again if you'd like.</span>
+                    </div>
+                  )}
+                </>
+              )}
             </>
           )}
 

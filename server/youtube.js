@@ -108,13 +108,24 @@ export async function searchYouTube(query, type = 'music') {
       }));
     }
     
-    // Single video URL - return as-is
+    // Single video URL — fetch real title via oEmbed
     const videoId = query.match(/(?:v=|youtu\.be\/)([^&?]+)/)?.[1];
     if (videoId) {
+      const safeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      let title = '';
+      try {
+        const oEmbed = await axios.get('https://www.youtube.com/oembed', {
+          params: { url: safeUrl, format: 'json' },
+          timeout: 5000,
+        });
+        title = decodeHtmlEntities(oEmbed.data.title || '');
+      } catch {
+        // oEmbed failed — title stays empty, frontend will show URL or fallback
+      }
       return [{
         id: videoId,
-        title: 'Video from URL',
-        url: query,
+        title,
+        url: safeUrl,
         thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
         duration: 'Unknown',
       }];

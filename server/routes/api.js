@@ -20,6 +20,9 @@ import {
   addBlockedKeyword,
   removeBlockedKeyword,
   getRequestById,
+  getDownloadCountByTitle,
+  getArtists,
+  resetRequestForRetry,
   createSession,
   getSession,
   deleteSession,
@@ -246,6 +249,10 @@ router.post("/requests", authenticateSession, (req, res) => {
 
     const cleanedTitle = cleanTitle(title);
 
+    // Extract artist from "Artist - Title" format
+    const dashIdx = cleanedTitle.indexOf(' - ');
+    const artist = dashIdx > 0 ? cleanedTitle.substring(0, dashIdx).trim() : null;
+
     // Validate URL if provided
     if (url && type !== "audiobook" && !validateVideoUrl(url)) {
       return res.status(400).json({ error: "Invalid video URL" });
@@ -274,6 +281,7 @@ router.post("/requests", authenticateSession, (req, res) => {
       searchQuery,
       thumbnail,
       duration,
+      artist,
     );
 
     // Parents can submit directly — auto-approve and trigger download
@@ -378,6 +386,99 @@ router.delete(
     }
   },
 );
+
+// Retry a failed or dummy-file completed download (parent only)
+router.post(
+  "/requests/:id/retry",
+  authenticateSession,
+  requireParent,
+  (req, res) => {
+    try {
+      const existing = getRequestById(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Not found" });
+      if (existing.type === "audiobook") {
+        return res.status(400).json({ error: "Audiobooks cannot be retried" });
+      }
+
+      // Delete old dummy/corrupt file if it exists on disk
+      if (existing.internxt_url) {
+        const filePath = path.join(
+          DOWNLOAD_DIR,
+          existing.internxt_url.replace("/api/downloads/", "")
+        );
+        if (fs.existsSync(filePath)) {
+          const stat = fs.statSync(filePath);
+          // Remove if it's tiny (dummy) or on explicit retry request
+          if (stat.size < 1024 || req.body.force) {
+            fs.unlinkSync(filePath);
+          }
+        }
+      }
+
+      const request = resetRequestForRetry(req.params.id);
+      downloadAndUpload(request).catch(console.error);
+      res.json(request);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to retry download" });
+    }
+  },
+);
+
+// Bulk retry all dummy/failed tracks (parent only)
+router.post(
+  "/requests/retry-all-dummy",
+  authenticateSession,
+  requireParent,
+  (req, res) => {
+    try {
+      const all = getAllRequests();
+      const toRetry = all.filter((r) => {
+        if (r.type === "audiobook" || r.status !== "completed") return false;
+        if (!r.internxt_url) return false;
+        const filePath = path.join(DOWNLOAD_DIR, r.internxt_url.replace("/api/downloads/", ""));
+        if (!fs.existsSync(filePath)) return true;
+        const stat = fs.statSync(filePath);
+        return stat.size < 1024; // dummy file
+      });
+
+      toRetry.forEach((r) => {
+        // Remove dummy file
+        if (r.internxt_url) {
+          const filePath = path.join(DOWNLOAD_DIR, r.internxt_url.replace("/api/downloads/", ""));
+          if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        }
+        const updated = resetRequestForRetry(r.id);
+        downloadAndUpload(updated).catch(console.error);
+      });
+
+      res.json({ queued: toRetry.length, titles: toRetry.map((r) => r.title) });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to retry downloads" });
+    }
+  },
+);
+
+// Check how many times a title has been downloaded (duplicate detection)
+router.get("/requests/check-duplicate", authenticateSession, (req, res) => {
+  try {
+    const { title } = req.query;
+    if (!title) return res.json({ count: 0 });
+    const count = getDownloadCountByTitle(title);
+    res.json({ count });
+  } catch {
+    res.status(500).json({ error: "Failed to check duplicate" });
+  }
+});
+
+// List distinct artists for filter dropdown
+router.get("/library/artists", authenticateSession, (req, res) => {
+  try {
+    const { profile } = req.query;
+    res.json(getArtists(profile || null));
+  } catch {
+    res.status(500).json({ error: "Failed to fetch artists" });
+  }
+});
 
 // Analytics route (parent only)
 router.get("/analytics", authenticateSession, requireParent, (req, res) => {

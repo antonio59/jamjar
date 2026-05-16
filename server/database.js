@@ -21,6 +21,13 @@ db.pragma('journal_mode = WAL');
 
 // Create tables
 db.exec(`
+  CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     username TEXT UNIQUE NOT NULL,
@@ -75,7 +82,37 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_requests_profile ON requests(profile);
   CREATE INDEX IF NOT EXISTS idx_requests_created ON requests(created_at);
   CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+  CREATE INDEX IF NOT EXISTS idx_requests_title ON requests(title);
 `);
+
+// Migrations — run once, idempotent via schema_migrations version tracking
+const migrations = [
+  {
+    version: 1,
+    up() {
+      try {
+        db.exec('ALTER TABLE requests ADD COLUMN artist TEXT');
+        db.exec('CREATE INDEX IF NOT EXISTS idx_requests_artist ON requests(artist)');
+        // Backfill artist from "Artist - Title" format
+        db.exec(`
+          UPDATE requests
+          SET artist = TRIM(SUBSTR(title, 1, INSTR(title, ' - ') - 1))
+          WHERE artist IS NULL AND INSTR(title, ' - ') > 0
+        `);
+      } catch {} // Column may already exist on retry
+    },
+  },
+];
+
+const applied = new Set(
+  db.prepare('SELECT version FROM schema_migrations').all().map((r) => r.version)
+);
+for (const m of migrations) {
+  if (!applied.has(m.version)) {
+    m.up();
+    db.prepare('INSERT INTO schema_migrations (version) VALUES (?)').run(m.version);
+  }
+}
 
 // Helper functions
 export function createUser(username, pin, role, profile = null, displayName = null, avatarEmoji = '👤') {
@@ -108,13 +145,13 @@ export async function verifyPin(username, pin) {
 }
 
 // Request functions
-export function createRequest(userId, profile, title, url, type, searchQuery, thumbnail, duration) {
+export function createRequest(userId, profile, title, url, type, searchQuery, thumbnail, duration, artist = null) {
   const id = uuidv4();
   const stmt = db.prepare(
-    `INSERT INTO requests (id, user_id, profile, title, url, type, status, search_query, thumbnail, duration)
-     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
+    `INSERT INTO requests (id, user_id, profile, title, url, type, status, search_query, thumbnail, duration, artist)
+     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
   );
-  stmt.run(id, userId, profile, title, url, type, searchQuery, thumbnail, duration);
+  stmt.run(id, userId, profile, title, url, type, searchQuery, thumbnail, duration, artist);
   return getRequestById(id);
 }
 
@@ -123,9 +160,17 @@ export function getRequestById(id) {
   return stmt.get(id);
 }
 
+// Returns all requests with a download_count field showing how many times
+// a track with the same title has been successfully completed
 export function getAllRequests() {
-  const stmt = db.prepare('SELECT * FROM requests ORDER BY created_at DESC');
-  return stmt.all();
+  return db.prepare(`
+    SELECT r.*,
+      (SELECT COUNT(*) FROM requests r2
+       WHERE LOWER(r2.title) = LOWER(r.title)
+         AND r2.status = 'completed') AS download_count
+    FROM requests r
+    ORDER BY r.created_at DESC
+  `).all();
 }
 
 export function getPendingRequests() {
@@ -134,8 +179,43 @@ export function getPendingRequests() {
 }
 
 export function getRequestsByProfile(profile) {
-  const stmt = db.prepare('SELECT * FROM requests WHERE profile = ? ORDER BY created_at DESC');
-  return stmt.all(profile);
+  return db.prepare(`
+    SELECT r.*,
+      (SELECT COUNT(*) FROM requests r2
+       WHERE LOWER(r2.title) = LOWER(r.title)
+         AND r2.status = 'completed') AS download_count
+    FROM requests r
+    WHERE r.profile = ?
+    ORDER BY r.created_at DESC
+  `).all(profile);
+}
+
+// Returns count of completed downloads matching this title (for duplicate detection)
+export function getDownloadCountByTitle(title) {
+  return db.prepare(
+    "SELECT COUNT(*) AS count FROM requests WHERE LOWER(title) = LOWER(?) AND status = 'completed'"
+  ).get(title)?.count ?? 0;
+}
+
+// Returns list of distinct artists from completed requests
+export function getArtists(profile = null) {
+  if (profile) {
+    return db.prepare(
+      "SELECT DISTINCT artist FROM requests WHERE artist IS NOT NULL AND profile = ? ORDER BY artist"
+    ).all(profile).map((r) => r.artist);
+  }
+  return db.prepare(
+    "SELECT DISTINCT artist FROM requests WHERE artist IS NOT NULL ORDER BY artist"
+  ).all().map((r) => r.artist);
+}
+
+// Resets a completed/failed request back to approved so it can be re-downloaded
+export function resetRequestForRetry(requestId) {
+  db.prepare(
+    `UPDATE requests SET status = 'approved', error_message = NULL, internxt_url = NULL,
+     downloaded_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+  ).run(requestId);
+  return getRequestById(requestId);
 }
 
 export function approveRequest(requestId, approvedBy) {

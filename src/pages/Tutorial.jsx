@@ -206,9 +206,9 @@ export default function Tutorial() {
             {[
               { title: "Request approved", desc: "Wait for a parent to approve. The download starts automatically for music." },
               { title: "Preview the track", desc: "Use the play button in your request history to check it sounds right before downloading." },
-              { title: "Download the file", desc: "Once completed, tap Download in your request history to save the MP3 to your device." },
-              { title: "Open the Yoto app", desc: "Go to Make Your Own → select your blank card → tap Add Audio." },
-              { title: "Upload the MP3", desc: "Choose the file you just downloaded, wait for it to upload, then press Save." },
+              { title: "Download the file", desc: "Once completed, tap Download in your request history to save the MP3 to your computer." },
+              { title: "Go to the Yoto website or app", desc: "You can load cards via the Yoto app on your phone/tablet, or via the Yoto website on a computer — both work!" },
+              { title: "Upload the MP3", desc: "Select your blank card, tap Add Audio, choose the file you downloaded, wait for it to upload, then press Save." },
               { title: "Insert the card", desc: "Put the card in your Yoto Player and enjoy!" },
             ].map((step, i) => (
               <div key={i} className="bg-white dark:bg-gray-800 rounded-lg p-3 shadow-sm">
@@ -224,6 +224,44 @@ export default function Tutorial() {
               </div>
             ))}
           </div>
+
+          {/* Two upload methods */}
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border-2 border-orange-300 dark:border-orange-600 shadow-sm">
+              <p className="font-bold text-sm text-orange-700 dark:text-orange-400 mb-2">📱 Via the Yoto App</p>
+              <ol className="space-y-1.5 text-xs text-gray-700 dark:text-gray-300">
+                <li className="flex gap-1.5"><span className="font-bold text-orange-500">1.</span> Open the Yoto app on your phone or tablet</li>
+                <li className="flex gap-1.5"><span className="font-bold text-orange-500">2.</span> Go to <strong>Make Your Own</strong></li>
+                <li className="flex gap-1.5"><span className="font-bold text-orange-500">3.</span> Select your blank card</li>
+                <li className="flex gap-1.5"><span className="font-bold text-orange-500">4.</span> Tap <strong>Add Audio</strong> and choose your downloaded MP3</li>
+                <li className="flex gap-1.5"><span className="font-bold text-orange-500">5.</span> Save and enjoy!</li>
+              </ol>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border-2 border-yellow-300 dark:border-yellow-600 shadow-sm">
+              <p className="font-bold text-sm text-yellow-700 dark:text-yellow-400 mb-2">💻 Via the Yoto Website</p>
+              <ol className="space-y-1.5 text-xs text-gray-700 dark:text-gray-300">
+                <li className="flex gap-1.5"><span className="font-bold text-yellow-600">1.</span> Connect your Yoto Player to your computer with a <strong>USB cable</strong></li>
+                <li className="flex gap-1.5"><span className="font-bold text-yellow-600">2.</span> Go to{" "}
+                  <a
+                    href="https://uk.yotoplay.com/make-your-own"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline text-yellow-700 dark:text-yellow-400 font-semibold break-all"
+                  >
+                    uk.yotoplay.com/make-your-own
+                  </a>
+                </li>
+                <li className="flex gap-1.5"><span className="font-bold text-yellow-600">3.</span> Log in to your Yoto account if asked</li>
+                <li className="flex gap-1.5"><span className="font-bold text-yellow-600">4.</span> Select your blank card and tap <strong>Add Audio</strong></li>
+                <li className="flex gap-1.5"><span className="font-bold text-yellow-600">5.</span> Upload your MP3 file and save</li>
+              </ol>
+            </div>
+          </div>
+
+          <Tip icon={AlertCircle} color="bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400">
+            <strong>Website method:</strong> Your Yoto Player must be plugged into your computer via USB cable before visiting the website. Make sure you're logged in to your Yoto account first.
+          </Tip>
         </div>
 
         {/* Card naming */}

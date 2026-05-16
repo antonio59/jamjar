@@ -7,27 +7,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import apiRoutes from './routes/api.js';
 
-Sentry.init({
-  dsn: process.env.SENTRY_DSN,
-  integrations: [Sentry.httpIntegration(), Sentry.expressIntegration()],
-  tracesSampleRate: 0.2,
-  beforeSend(event) {
-    // Scrub sensitive fields before sending to Sentry
-    if (event.request?.data) {
-      delete event.request.data.pin;
-    }
-    if (event.request?.headers) {
-      delete event.request.headers['x-session-id'];
-    }
-    return event;
-  },
-});
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Trust the Nginx reverse proxy sitting in front of us (fixes ERR_ERL_UNEXPECTED_X_FORWARDED_FOR)
+app.set('trust proxy', 1);
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://jamjar.antoniosmith.xyz';
 
 // Security headers
