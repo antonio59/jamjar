@@ -43,7 +43,7 @@ function isDummyDownload(request) {
   return request.status === "completed" && request.internxt_url && !request.is_real_file;
 }
 
-const POLL_INTERVAL = 3000;
+const POLL_INTERVAL = 12000; // 12 s — safe under 300 req/15 min rate limit
 
 const STATUS_CONFIG = {
   pending:     { label: "Pending",     bg: "bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-700",    dot: "bg-yellow-500"  },
@@ -70,7 +70,6 @@ export default function Dashboard() {
     sessionId,
     getPendingRequests,
     getRequests,
-    getRequestStatus,
     approveRequest,
     rejectRequest,
     deleteRequest,
@@ -84,6 +83,7 @@ export default function Dashboard() {
   const [allRequests, setAllRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [retryingAll, setRetryingAll] = useState(false);
+  const [swipeProcessed, setSwipeProcessed] = useState(0);
   const pollRef = useRef(null);
 
   // Filter state
@@ -102,6 +102,7 @@ export default function Dashboard() {
       ]);
       setPending(pendingData);
       setAllRequests(allData);
+      setSwipeProcessed(0);
     } else {
       const data = await getRequests();
       setAllRequests(data);
@@ -111,7 +112,7 @@ export default function Dashboard() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Poll in-flight downloads
+  // Poll in-flight downloads — single getRequests() call per interval, not one per track
   useEffect(() => {
     const inFlight = allRequests.filter(
       (r) => r.status === "downloading" || (r.status === "approved" && r.type === "music"),
@@ -121,30 +122,23 @@ export default function Dashboard() {
       return;
     }
     pollRef.current = setInterval(async () => {
+      const fresh = await getRequests();
+      if (!fresh?.length) return;
+      const prevById = Object.fromEntries(allRequests.map((r) => [r.id, r]));
       let anyChanged = false;
-      const updated = await Promise.all(
-        allRequests.map(async (r) => {
-          if (r.status !== "downloading" && !(r.status === "approved" && r.type === "music")) return r;
-          const fresh = await getRequestStatus(r.id);
-          if (fresh && fresh.status !== r.status) {
-            anyChanged = true;
-            return { ...r, status: fresh.status, internxt_url: fresh.download_url };
-          }
-          return r;
-        }),
-      );
+      fresh.forEach((r) => {
+        if (prevById[r.id]?.status !== r.status) anyChanged = true;
+      });
       if (anyChanged) {
-        setAllRequests(updated);
-        const justCompleted = updated.find(
-          (r) =>
-            r.status === "completed" &&
-            allRequests.find((old) => old.id === r.id && old.status !== "completed"),
+        const justCompleted = fresh.find(
+          (r) => r.status === "completed" && prevById[r.id]?.status !== "completed",
         );
         if (justCompleted) showToast(`"${justCompleted.title}" is ready!`, "success");
+        setAllRequests(fresh);
       }
     }, POLL_INTERVAL);
     return () => clearInterval(pollRef.current);
-  }, [allRequests, getRequestStatus, showToast]);
+  }, [allRequests, getRequests, showToast]);
 
   // Duplicate count map — how many times each title has been completed
   const downloadCounts = useMemo(() => {
@@ -331,13 +325,16 @@ export default function Dashboard() {
               </p>
               <SwipeApprove
                 requests={pending}
+                totalProcessed={swipeProcessed}
                 onApprove={(id) => {
                   handleApprove(id);
                   setPending((prev) => prev.filter((r) => r.id !== id));
+                  setSwipeProcessed((n) => n + 1);
                 }}
                 onReject={(id, reason) => {
                   handleRejectWithReason(id, reason);
                   setPending((prev) => prev.filter((r) => r.id !== id));
+                  setSwipeProcessed((n) => n + 1);
                 }}
               />
             </div>

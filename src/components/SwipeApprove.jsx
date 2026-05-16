@@ -10,8 +10,7 @@ const REJECTION_REASONS = [
   { id: "other", label: "Other reason", emoji: "💬" },
 ];
 
-export default function SwipeApprove({ requests, onApprove, onReject }) {
-  const [currentIndex, setCurrentIndex] = useState(0);
+export default function SwipeApprove({ requests, onApprove, onReject, totalProcessed = 0 }) {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [selectedReason, setSelectedReason] = useState("");
   const [customReason, setCustomReason] = useState("");
@@ -24,7 +23,8 @@ export default function SwipeApprove({ requests, onApprove, onReject }) {
   const rejectOpacity = useTransform(x, [-120, -20], [1, 0]);
 
   const cardRef = useRef(null);
-  const currentRequest = requests[currentIndex];
+  // Always show the first item — parent removes it from the array when processed
+  const currentRequest = requests[0];
 
   useEffect(() => {
     if (!currentRequest) return;
@@ -46,7 +46,6 @@ export default function SwipeApprove({ requests, onApprove, onReject }) {
     if (direction === "right") {
       onApprove(currentRequest.id);
       controls.set({ x: 0, opacity: 1 });
-      setCurrentIndex((prev) => prev + 1);
     } else {
       setShowRejectModal(true);
     }
@@ -62,7 +61,6 @@ export default function SwipeApprove({ requests, onApprove, onReject }) {
     setSelectedReason("");
     setCustomReason("");
     controls.set({ x: 0, opacity: 1 });
-    setCurrentIndex((prev) => prev + 1);
   };
 
   const handleRejectCancel = async () => {
@@ -147,7 +145,7 @@ export default function SwipeApprove({ requests, onApprove, onReject }) {
 
       {/* Counter + hint — in normal flow, no overflow */}
       <p className="text-center text-xs text-gray-400 dark:text-gray-500 mt-2 select-none">
-        {currentIndex + 1} of {requests.length} · ← reject &nbsp;|&nbsp; approve →
+        {requests.length} remaining{totalProcessed > 0 ? ` · ${totalProcessed} done` : ""} · ← reject &nbsp;|&nbsp; approve →
       </p>
 
       {/* Action buttons — in normal flow */}
