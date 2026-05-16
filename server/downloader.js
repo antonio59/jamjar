@@ -36,6 +36,9 @@ export async function downloadAndUpload(request) {
 
     const ytDlp = new YtDlp(YTDLP_BIN);
 
+        const nodebin = process.execPath; // use the same node binary running this server
+    const cookiesFile = process.env.YTDLP_COOKIES_FILE;
+
     // Build CLI args array — yt-dlp-wrap.exec() takes string[], not an options object
     const args = [
       request.url,
@@ -46,7 +49,13 @@ export async function downloadAndUpload(request) {
       "-o", outputFile,
       "--no-playlist",
       "--restrict-filenames",
+      // Use Node.js for PO-token generation so YouTube doesn't block as bot
+      "--js-runtimes", `node:${nodebin}`,
     ];
+
+    if (cookiesFile && fs.existsSync(cookiesFile)) {
+      args.push("--cookies", cookiesFile);
+    }
 
     if (isYoto) {
       // CBR 128kbps, 44.1kHz stereo, clean ID3v2.3 tags — Yoto player compatibility
