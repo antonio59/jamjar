@@ -36,26 +36,27 @@ export async function downloadAndUpload(request) {
 
     const ytDlp = new YtDlp(YTDLP_BIN);
 
-    const options = {
-      format: "bestaudio/best",
-      extractAudio: true,
-      audioFormat: "mp3",
-      // Yoto: CBR 128kbps, 44.1kHz stereo, clean ID3v2.3 — most compatible with Yoto upload
-      // iPod: best quality with embedded thumbnail
-      audioQuality: isYoto ? "5" : "0",
-      output: outputFile,
-      noPlaylist: true,
-      restrictFilenames: true,
-      ...(isYoto
-        ? {
-            postprocessorArgs:
-              "ffmpeg:-b:a 128k -ar 44100 -ac 2 -id3v2_version 3 -write_id3v1 1",
-          }
-        : { embedThumbnail: true }),
-    };
+    // Build CLI args array — yt-dlp-wrap.exec() takes string[], not an options object
+    const args = [
+      request.url,
+      "-f", "bestaudio/best",
+      "-x",
+      "--audio-format", "mp3",
+      "--audio-quality", isYoto ? "5" : "0",
+      "-o", outputFile,
+      "--no-playlist",
+      "--restrict-filenames",
+    ];
+
+    if (isYoto) {
+      // CBR 128kbps, 44.1kHz stereo, clean ID3v2.3 tags — Yoto player compatibility
+      args.push("--postprocessor-args", "ffmpeg:-b:a 128k -ar 44100 -ac 2 -id3v2_version 3 -write_id3v1 1");
+    } else {
+      args.push("--embed-thumbnail");
+    }
 
     console.log(`Downloading with yt-dlp [${YTDLP_BIN}]: ${request.url}`);
-    await ytDlp.exec(request.url, options);
+    await ytDlp.execPromise(args);
 
     // Find the output file — yt-dlp uses the sanitized name as the base
     const downloadedFile = fs
