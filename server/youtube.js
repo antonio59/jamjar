@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { createYtDlp, baseArgs } from './ytdlp.js';
 import { applyCleanFilter, isCleanTitle } from './cleanFilter.js';
+import logger from './logger.js';
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
 
@@ -62,7 +63,7 @@ export async function getPlaylistTracks(playlistUrl) {
       playlistTitle: data.title,
     }));
   } catch (error) {
-    console.error('Failed to fetch playlist:', error.message);
+    logger.error('playlist fetch failed', { error: error.message });
     return [];
   }
 }
@@ -195,7 +196,7 @@ export async function searchYouTube(query, type = 'music', { allowExplicit = fal
 
       return results;
     } catch (error) {
-      console.error('YouTube API error:', error.message);
+      logger.error('youtube api error', { error: error.message });
     }
   }
   

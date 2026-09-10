@@ -44,10 +44,19 @@ YOUTUBE_API_KEY=your_youtube_api_key
 DOWNLOAD_DIR=./downloads
 MAX_CONCURRENT_DOWNLOADS=2
 DB_PATH=./data/jamjar.db
+BACKUP_DIR=./data/backups
+BACKUP_KEEP=7
+LOG_LEVEL=info
 INTERNXT_EMAIL=your-email
 INTERNXT_PASSWORD=your-password
 INTERNXT_APP_KEY=your-app-key
 ```
+
+## Operations
+
+- `GET /api/health` — unauthenticated liveness check (database, download dir, queue, last backup). Returns 503 when degraded, so it can drive systemd/nginx/uptime monitoring.
+- Logs are structured JSON lines in production (`LOG_LEVEL` controls verbosity), pretty single lines in development.
+- The database is backed up with `VACUUM INTO` at startup and daily into `BACKUP_DIR`, keeping the newest `BACKUP_KEEP` copies.
 
 ## Production Deployment
 

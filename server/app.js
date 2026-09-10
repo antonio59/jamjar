@@ -6,6 +6,8 @@ import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import apiRoutes from './routes/api.js';
+import healthRoutes from './routes/health.js';
+import { requestLogger } from './logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,6 +44,9 @@ app.use(cors({
   credentials: false,
 }));
 
+// Health checks run ahead of the rate limiter so monitoring never gets 429s
+app.use('/api', healthRoutes);
+
 // Global rate limit — 300 requests per 15 min per IP
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -52,6 +57,7 @@ app.use(rateLimit({
 }));
 
 app.use(express.json({ limit: '100kb' }));
+app.use(requestLogger);
 
 // Serve static files from dist
 app.use(express.static(path.join(__dirname, '../dist')));

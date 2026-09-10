@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { updateRequestStatus } from "./database.js";
 import { createYtDlp, baseArgs, YTDLP_BIN } from "./ytdlp.js";
+import logger from "./logger.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,7 +20,7 @@ if (!fs.existsSync(ipodDir)) fs.mkdirSync(ipodDir, { recursive: true });
 export async function downloadAndUpload(request) {
   try {
     updateRequestStatus(request.id, "downloading");
-    console.log(`Starting download: ${request.title}`);
+    logger.info("download started", { requestId: request.id, title: request.title });
 
     const outputDir = request.profile === "yoto" ? yotoDir : ipodDir;
     const sanitizedName = request.title
@@ -51,7 +52,7 @@ export async function downloadAndUpload(request) {
       args.push("--embed-thumbnail");
     }
 
-    console.log(`Downloading with yt-dlp [${YTDLP_BIN}]: ${request.url}`);
+    logger.info("yt-dlp invoked", { bin: YTDLP_BIN, url: request.url });
     await ytDlp.execPromise(args);
 
     // Find the output file — yt-dlp uses the sanitized name as the base
@@ -73,9 +74,17 @@ export async function downloadAndUpload(request) {
 
     const downloadUrl = `/api/downloads/${request.profile}/${downloadedFile}`;
     updateRequestStatus(request.id, "completed", null, downloadUrl);
-    console.log(`Download complete: ${request.title} (${Math.round(stat.size / 1024)}KB)`);
+    logger.info("download complete", {
+      requestId: request.id,
+      title: request.title,
+      kilobytes: Math.round(stat.size / 1024),
+    });
   } catch (error) {
-    console.error(`Download failed for ${request.title}:`, error.message);
+    logger.error("download failed", {
+      requestId: request.id,
+      title: request.title,
+      error: error.message,
+    });
     updateRequestStatus(request.id, "failed", error.message);
   }
 }

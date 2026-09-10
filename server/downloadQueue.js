@@ -1,4 +1,5 @@
 import { downloadAndUpload } from "./downloader.js";
+import logger from "./logger.js";
 
 const MAX_CONCURRENT = Math.max(
   1,
@@ -13,7 +14,12 @@ function pump() {
     const request = pending.shift();
     active.add(request.id);
     downloadAndUpload(request)
-      .catch((err) => console.error("Download worker error:", err.message))
+      .catch((err) =>
+            logger.error("download worker error", {
+              requestId: request.id,
+              error: err.message,
+            }),
+          )
       .finally(() => {
         active.delete(request.id);
         pump();

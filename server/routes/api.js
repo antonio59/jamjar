@@ -31,6 +31,7 @@ import {
 import { searchYouTube } from "../youtube.js";
 import { isExplicitTitle } from "../cleanFilter.js";
 import { enqueueDownload, queueStatus } from "../downloadQueue.js";
+import logger from "../logger.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -435,7 +436,7 @@ router.delete(
           try {
             fs.unlinkSync(filePath);
           } catch (err) {
-            console.error("Failed to delete file on request delete:", err.message);
+            logger.error("failed to delete file on request delete", { error: err.message });
           }
         }
       }
