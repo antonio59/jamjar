@@ -331,3 +331,74 @@ describe('search', () => {
     expect(res.body.every((r) => !r.isExplicit)).toBe(true);
   });
 });
+
+describe('user management', () => {
+  it('is parent-only', async () => {
+    const res = await request(app)
+      .get('/api/users')
+      .set('X-Session-Id', childSession);
+    expect(res.status).toBe(403);
+  });
+
+  it('creates a child, rotates its PIN, and invalidates its sessions', async () => {
+    const created = await request(app)
+      .post('/api/users')
+      .set('X-Session-Id', parentSession)
+      .send({ username: 'rosie', pin: '4321', profile: 'ipod', displayName: 'Rosie' });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ username: 'rosie', role: 'child', profile: 'ipod' });
+
+    const session = await login('rosie', '4321');
+
+    const rotated = await request(app)
+      .post(`/api/users/${created.body.id}/pin`)
+      .set('X-Session-Id', parentSession)
+      .send({ pin: '9999' });
+    expect(rotated.status).toBe(200);
+
+    const stale = await request(app).get('/api/requests').set('X-Session-Id', session);
+    expect(stale.status).toBe(401);
+
+    const relogin = await request(app)
+      .post('/api/auth/login')
+      .send({ username: 'rosie', pin: '9999' });
+    expect(relogin.status).toBe(200);
+  });
+
+  it('validates usernames, PINs and duplicates', async () => {
+    const badPin = await request(app)
+      .post('/api/users')
+      .set('X-Session-Id', parentSession)
+      .send({ username: 'jo', pin: '12', profile: 'yoto' });
+    expect(badPin.status).toBe(400);
+
+    const badName = await request(app)
+      .post('/api/users')
+      .set('X-Session-Id', parentSession)
+      .send({ username: 'Bad Name!', pin: '1111', profile: 'yoto' });
+    expect(badName.status).toBe(400);
+
+    const dupe = await request(app)
+      .post('/api/users')
+      .set('X-Session-Id', parentSession)
+      .send({ username: 'kid', pin: '1111', profile: 'yoto' });
+    expect(dupe.status).toBe(409);
+  });
+
+  it('refuses to delete a child that still has requests', async () => {
+    const users = await request(app).get('/api/users').set('X-Session-Id', parentSession);
+    const kid = users.body.find((u) => u.username === 'kid');
+    expect(kid.request_count).toBeGreaterThan(0);
+
+    const blocked = await request(app)
+      .delete(`/api/users/${kid.id}`)
+      .set('X-Session-Id', parentSession);
+    expect(blocked.status).toBe(409);
+
+    const rosie = users.body.find((u) => u.username === 'rosie');
+    const removed = await request(app)
+      .delete(`/api/users/${rosie.id}`)
+      .set('X-Session-Id', parentSession);
+    expect(removed.status).toBe(200);
+  });
+});

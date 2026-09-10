@@ -145,6 +145,47 @@ export function getUserById(id) {
   return stmt.get(id);
 }
 
+export function listUsers() {
+  return db
+    .prepare(
+      `SELECT id, username, role, profile, display_name, avatar_emoji, created_at
+       FROM users ORDER BY role DESC, username`
+    )
+    .all();
+}
+
+export function updateUserPin(id, pin) {
+  const stmt = db.prepare('UPDATE users SET pin = ? WHERE id = ?');
+  const info = stmt.run(bcrypt.hashSync(pin, 12), id);
+  if (info.changes === 0) return null;
+  deleteSessionsForUser(id);
+  return getUserById(id);
+}
+
+export function updateUser(id, { displayName, avatarEmoji }) {
+  const current = getUserById(id);
+  if (!current) return null;
+  db.prepare('UPDATE users SET display_name = ?, avatar_emoji = ? WHERE id = ?').run(
+    displayName ?? current.display_name,
+    avatarEmoji ?? current.avatar_emoji,
+    id
+  );
+  return getUserById(id);
+}
+
+export function deleteUser(id) {
+  deleteSessionsForUser(id);
+  return db.prepare('DELETE FROM users WHERE id = ?').run(id).changes > 0;
+}
+
+export function countRequestsByUser(id) {
+  return db.prepare('SELECT COUNT(*) AS n FROM requests WHERE user_id = ?').get(id).n;
+}
+
+export function deleteSessionsForUser(id) {
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+}
+
 export async function verifyPin(username, pin) {
   const user = getUserByUsername(username);
   // Always run bcrypt compare (even on missing user) to prevent timing attacks

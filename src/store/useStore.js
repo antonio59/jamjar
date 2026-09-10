@@ -153,6 +153,45 @@ const useStore = create((set, get) => ({
     return response.data;
   },
 
+  getUsers: async () => {
+    const { sessionId } = get();
+    if (!sessionId) return [];
+    const response = await axios.get(`${API_URL}/users`, {
+      headers: { 'X-Session-Id': sessionId },
+    });
+    return response.data;
+  },
+
+  createChild: async (data) => {
+    const { sessionId } = get();
+    const response = await axios.post(`${API_URL}/users`, data, {
+      headers: { 'X-Session-Id': sessionId },
+    });
+    return response.data;
+  },
+
+  updateChild: async (id, data) => {
+    const { sessionId } = get();
+    const response = await axios.patch(`${API_URL}/users/${id}`, data, {
+      headers: { 'X-Session-Id': sessionId },
+    });
+    return response.data;
+  },
+
+  setUserPin: async (id, pin) => {
+    const { sessionId } = get();
+    await axios.post(`${API_URL}/users/${id}/pin`, { pin }, {
+      headers: { 'X-Session-Id': sessionId },
+    });
+  },
+
+  deleteChild: async (id) => {
+    const { sessionId } = get();
+    await axios.delete(`${API_URL}/users/${id}`, {
+      headers: { 'X-Session-Id': sessionId },
+    });
+  },
+
   getBlockedKeywords: async () => {
     const { sessionId } = get();
     if (!sessionId) return [];

@@ -23,6 +23,14 @@ import {
   getDownloadCountByTitle,
   getArtists,
   resetRequestForRetry,
+  createUser,
+  getUserByUsername,
+  getUserById,
+  listUsers,
+  updateUser,
+  updateUserPin,
+  deleteUser,
+  countRequestsByUser,
   createSession,
   getSession,
   deleteSession,
@@ -612,6 +620,100 @@ router.delete(
     }
   },
 );
+
+// Child account management (parent only)
+const PIN_PATTERN = /^\d{4}$/;
+const USERNAME_PATTERN = /^[a-z0-9_-]{2,20}$/;
+
+router.get("/users", authenticateSession, requireParent, (req, res) => {
+  try {
+    res.json(
+      listUsers().map((u) => ({ ...u, request_count: countRequestsByUser(u.id) })),
+    );
+  } catch {
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+router.post("/users", authenticateSession, requireParent, (req, res) => {
+  try {
+    const { username, pin, profile, displayName, avatarEmoji } = req.body || {};
+    const name = typeof username === "string" ? username.trim().toLowerCase() : "";
+    if (!USERNAME_PATTERN.test(name)) {
+      return res.status(400).json({
+        error: "Username must be 2-20 characters: letters, numbers, - or _",
+      });
+    }
+    if (!PIN_PATTERN.test(pin || "")) {
+      return res.status(400).json({ error: "PIN must be exactly 4 digits" });
+    }
+    if (profile !== "yoto" && profile !== "ipod") {
+      return res.status(400).json({ error: "Profile must be yoto or ipod" });
+    }
+    if (getUserByUsername(name)) {
+      return res.status(409).json({ error: "That username is taken" });
+    }
+    const user = createUser(
+      name,
+      pin,
+      "child",
+      profile,
+      typeof displayName === "string" && displayName.trim() ? displayName.trim() : name,
+      typeof avatarEmoji === "string" && avatarEmoji ? avatarEmoji : "🎵",
+    );
+    logger.info("child account created", { by: req.user.id, userId: user.id });
+    res.status(201).json(user);
+  } catch {
+    res.status(500).json({ error: "Failed to create user" });
+  }
+});
+
+router.patch("/users/:id", authenticateSession, requireParent, (req, res) => {
+  try {
+    const { displayName, avatarEmoji } = req.body || {};
+    const updated = updateUser(req.params.id, { displayName, avatarEmoji });
+    if (!updated) return res.status(404).json({ error: "User not found" });
+    res.json(updated);
+  } catch {
+    res.status(500).json({ error: "Failed to update user" });
+  }
+});
+
+// Rotating a PIN signs that account out everywhere
+router.post("/users/:id/pin", authenticateSession, requireParent, (req, res) => {
+  try {
+    const { pin } = req.body || {};
+    if (!PIN_PATTERN.test(pin || "")) {
+      return res.status(400).json({ error: "PIN must be exactly 4 digits" });
+    }
+    const updated = updateUserPin(req.params.id, pin);
+    if (!updated) return res.status(404).json({ error: "User not found" });
+    logger.info("pin rotated", { by: req.user.id, userId: req.params.id });
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ error: "Failed to update PIN" });
+  }
+});
+
+router.delete("/users/:id", authenticateSession, requireParent, (req, res) => {
+  try {
+    const target = getUserById(req.params.id);
+    if (!target) return res.status(404).json({ error: "User not found" });
+    if (target.role === "parent") {
+      return res.status(400).json({ error: "Parent accounts can't be deleted here" });
+    }
+    if (countRequestsByUser(target.id) > 0) {
+      return res.status(409).json({
+        error: "This child still has requests — delete those first",
+      });
+    }
+    deleteUser(target.id);
+    logger.info("child account deleted", { by: req.user.id, userId: target.id });
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ error: "Failed to delete user" });
+  }
+});
 
 // Short-lived token for <audio src> and EventSource, which can't send headers
 router.post("/access-token", authenticateSession, (req, res) => {

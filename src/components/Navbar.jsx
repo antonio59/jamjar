@@ -7,6 +7,7 @@ import {
   PlusCircle,
   BookOpen,
   LogOut,
+  Settings,
   Menu,
   X,
 } from "lucide-react";
@@ -19,6 +20,7 @@ const PARENT_NAV = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard", purpose: "Review queue" },
   { to: "/analytics", icon: BarChart3, label: "Analytics", purpose: "Trends" },
   { to: "/tutorial", icon: BookOpen, label: "Tutorial", purpose: "How it works" },
+  { to: "/settings", icon: Settings, label: "Settings", purpose: "Kids & PINs" },
 ];
 
 const CHILD_NAV = [
