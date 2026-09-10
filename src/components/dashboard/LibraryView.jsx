@@ -43,7 +43,6 @@ const SORT_OPTIONS = [
 export default function LibraryView({
   requests,
   userRole,
-  sessionId,
   onDelete,
   onRetry,
   onShowUploadGuide,
@@ -233,7 +232,6 @@ export default function LibraryView({
               items={items}
               downloadCounts={downloadCounts}
               userRole={userRole}
-              sessionId={sessionId}
               onDelete={onDelete}
               onRetry={onRetry}
               onShowUploadGuide={onShowUploadGuide}
@@ -249,7 +247,6 @@ export default function LibraryView({
                 request={r}
                 downloadCount={downloadCounts[r.title.toLowerCase()] || 0}
                 userRole={userRole}
-                sessionId={sessionId}
                 onDelete={onDelete}
                 onRetry={onRetry}
                 onShowUploadGuide={onShowUploadGuide}
@@ -280,7 +277,7 @@ function FilterChip({ label, value, onChange, options }) {
   );
 }
 
-function ArtistGroup({ artist, items, downloadCounts, userRole, sessionId, onDelete, onRetry, onShowUploadGuide }) {
+function ArtistGroup({ artist, items, downloadCounts, userRole, onDelete, onRetry, onShowUploadGuide }) {
   const [open, setOpen] = useState(true);
   const ready = items.filter((r) => r.status === "completed").length;
 
@@ -311,7 +308,6 @@ function ArtistGroup({ artist, items, downloadCounts, userRole, sessionId, onDel
               request={r}
               downloadCount={downloadCounts[r.title.toLowerCase()] || 0}
               userRole={userRole}
-              sessionId={sessionId}
               onDelete={onDelete}
               onRetry={onRetry}
               onShowUploadGuide={onShowUploadGuide}

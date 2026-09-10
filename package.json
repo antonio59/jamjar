@@ -19,7 +19,7 @@
   "dependencies": {
     "axios": "^1.15.2",
     "bcryptjs": "^3.0.2",
-    "better-sqlite3": "^11.9.1",
+    "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",

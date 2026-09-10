@@ -47,6 +47,8 @@ DB_PATH=./data/jamjar.db
 BACKUP_DIR=./data/backups
 BACKUP_KEEP=7
 LOG_LEVEL=info
+ACCESS_TOKEN_SECRET=change-me
+ACCESS_TOKEN_TTL=300
 INTERNXT_EMAIL=your-email
 INTERNXT_PASSWORD=your-password
 INTERNXT_APP_KEY=your-app-key
@@ -57,6 +59,8 @@ INTERNXT_APP_KEY=your-app-key
 - `GET /api/health` — unauthenticated liveness check (database, download dir, queue, last backup). Returns 503 when degraded, so it can drive systemd/nginx/uptime monitoring.
 - Logs are structured JSON lines in production (`LOG_LEVEL` controls verbosity), pretty single lines in development.
 - The database is backed up with `VACUUM INTO` at startup and daily into `BACKUP_DIR`, keeping the newest `BACKUP_KEEP` copies.
+- Audio previews and the dashboard event stream authenticate with a short-lived token from `POST /api/access-token`, signed with `ACCESS_TOKEN_SECRET` (set it in production, otherwise tokens are invalidated by every restart) and valid for `ACCESS_TOKEN_TTL` seconds.
+- `GET /api/events` is a server-sent event stream of request changes; the dashboard falls back to polling if it can't connect, so any reverse proxy in front of the app must not buffer it (`proxy_buffering off;` in nginx).
 
 ## Production Deployment
 

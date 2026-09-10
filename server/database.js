@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { publishRequestChange } from './requestEvents.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -152,7 +153,9 @@ export function createRequest(userId, profile, title, url, type, searchQuery, th
      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
   );
   stmt.run(id, userId, profile, title, url, type, searchQuery, thumbnail, duration, artist);
-  return getRequestById(id);
+  const request = getRequestById(id);
+  publishRequestChange({ type: 'created', request });
+  return request;
 }
 
 export function getRequestById(id) {
@@ -215,7 +218,9 @@ export function resetRequestForRetry(requestId) {
     `UPDATE requests SET status = 'approved', error_message = NULL, internxt_url = NULL,
      downloaded_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).run(requestId);
-  return getRequestById(requestId);
+  const request = getRequestById(requestId);
+  publishRequestChange({ type: 'updated', request });
+  return request;
 }
 
 export function approveRequest(requestId, approvedBy) {
@@ -223,7 +228,9 @@ export function approveRequest(requestId, approvedBy) {
     `UPDATE requests SET status = 'approved', approved_by = ?, approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   );
   stmt.run(approvedBy, requestId);
-  return getRequestById(requestId);
+  const request = getRequestById(requestId);
+  publishRequestChange({ type: 'updated', request });
+  return request;
 }
 
 export function rejectRequest(requestId, reason) {
@@ -231,7 +238,9 @@ export function rejectRequest(requestId, reason) {
     `UPDATE requests SET status = 'rejected', rejected_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   );
   stmt.run(reason, requestId);
-  return getRequestById(requestId);
+  const request = getRequestById(requestId);
+  publishRequestChange({ type: 'updated', request });
+  return request;
 }
 
 export function updateRequestStatus(requestId, status, errorMessage = null, internxtUrl = null) {
@@ -241,12 +250,16 @@ export function updateRequestStatus(requestId, status, errorMessage = null, inte
      updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   );
   stmt.run(status, errorMessage, internxtUrl, status, requestId);
-  return getRequestById(requestId);
+  const request = getRequestById(requestId);
+  publishRequestChange({ type: 'updated', request });
+  return request;
 }
 
 export function deleteRequest(requestId) {
+  const request = getRequestById(requestId);
   const stmt = db.prepare('DELETE FROM requests WHERE id = ?');
   stmt.run(requestId);
+  publishRequestChange({ type: 'deleted', request });
 }
 
 // Generic / placeholder titles that pollute analytics — excluded from

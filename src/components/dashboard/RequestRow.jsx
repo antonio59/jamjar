@@ -61,7 +61,6 @@ export default function RequestRow({
   request,
   downloadCount = 0,
   userRole,
-  sessionId,
   selectable = false,
   selected = false,
   onToggleSelect,
@@ -175,7 +174,7 @@ export default function RequestRow({
 
           {/* Audio preview — only when ready and has playable URL */}
           {request.status === "completed" && request.internxt_url && (
-            <MiniPlayer request={request} sessionId={sessionId} className="mt-3" />
+            <MiniPlayer request={request} className="mt-3" />
           )}
 
           {/* Action groups — grouped by intent, never mixed */}
@@ -393,25 +392,20 @@ function LifecycleAction({ request, onDelete }) {
   );
 }
 
-/* ─── Mini Player — authenticated blob streaming ─────────────────────────── */
-function MiniPlayer({ request, sessionId, className = "" }) {
+/* ─── Mini Player — signed-URL streaming with range support ──────────────── */
+function MiniPlayer({ request, className = "" }) {
+  const getAccessToken = useStore((s) => s.getAccessToken);
   const [state, setState] = useState("idle"); // idle | loading | playing | paused | error
   const [error, setError] = useState(null);
   const audioRef = useRef(null);
-  const blobUrlRef = useRef(null);
+  const loadedRef = useRef(false);
 
   const streamUrl = request.internxt_url?.replace("/api/downloads/", "/api/stream/");
-
-  useEffect(() => {
-    return () => {
-      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
-    };
-  }, []);
 
   const handleToggle = async () => {
     if (state === "loading") return;
 
-    if (audioRef.current && blobUrlRef.current) {
+    if (audioRef.current && loadedRef.current) {
       if (audioRef.current.paused) {
         await audioRef.current.play().catch(() => {});
         setState("playing");
@@ -425,22 +419,17 @@ function MiniPlayer({ request, sessionId, className = "" }) {
     setState("loading");
     setError(null);
     try {
-      const res = await fetch(streamUrl, { headers: { "X-Session-Id": sessionId } });
-      if (!res.ok) {
-        if (res.status === 401 || res.status === 403)
-          throw new Error("Session expired — log in again");
-        throw new Error(`Couldn't load preview (${res.status})`);
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      blobUrlRef.current = url;
+      const token = await getAccessToken();
+      if (!token) throw new Error("Session expired — log in again");
       if (audioRef.current) {
-        audioRef.current.src = url;
+        audioRef.current.src = `${streamUrl}?token=${encodeURIComponent(token)}`;
         audioRef.current.load();
+        loadedRef.current = true;
         await audioRef.current.play().catch(() => {});
       }
       setState("playing");
     } catch (e) {
+      loadedRef.current = false;
       setError(e.message || "Preview unavailable");
       setState("error");
     }
@@ -462,6 +451,13 @@ function MiniPlayer({ request, sessionId, className = "" }) {
       <audio
         ref={audioRef}
         controls
+        preload="none"
+        onError={() => {
+          if (!loadedRef.current) return;
+          loadedRef.current = false;
+          setError("Preview unavailable");
+          setState("error");
+        }}
         onEnded={() => setState("paused")}
         onPause={() => state === "playing" && setState("paused")}
         onPlay={() => setState("playing")}

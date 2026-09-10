@@ -26,6 +26,8 @@ const useStore = create((set, get) => ({
   user: null,
   sessionId: localStorage.getItem('sessionId'),
   isAuthenticated: !!localStorage.getItem('sessionId'),
+  accessToken: null,
+  accessTokenExpiresAt: 0,
   
   // Toast notifications
   toast: null,
@@ -89,7 +91,13 @@ const useStore = create((set, get) => ({
       });
     }
     localStorage.removeItem('sessionId');
-    set({ user: null, sessionId: null, isAuthenticated: false });
+    set({
+      user: null,
+      sessionId: null,
+      isAuthenticated: false,
+      accessToken: null,
+      accessTokenExpiresAt: 0,
+    });
   },
   
   search: async (query, type) => {
@@ -177,6 +185,24 @@ const useStore = create((set, get) => ({
     return response.data;
   },
   
+  // Short-lived token for URLs the browser fetches without our auth header
+  // (<audio src>, EventSource). Cached until shortly before it expires.
+  getAccessToken: async () => {
+    const { sessionId, accessToken, accessTokenExpiresAt } = get();
+    if (!sessionId) return null;
+    if (accessToken && Date.now() < accessTokenExpiresAt - 15000) {
+      return accessToken;
+    }
+    const response = await axios.post(`${API_URL}/access-token`, {}, {
+      headers: { 'X-Session-Id': sessionId },
+    });
+    set({
+      accessToken: response.data.token,
+      accessTokenExpiresAt: Date.now() + response.data.expiresIn * 1000,
+    });
+    return response.data.token;
+  },
+
   getRequests: async () => {
     const { sessionId } = get();
     if (!sessionId) return [];

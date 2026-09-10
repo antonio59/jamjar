@@ -7,7 +7,6 @@ import RequestRow from "./RequestRow";
 export default function MaintenanceView({
   brokenRequests,
   userRole,
-  sessionId,
   onRetry,
   onDelete,
   onRetryAll,
@@ -57,7 +56,6 @@ export default function MaintenanceView({
                 key={r.id}
                 request={r}
                 userRole={userRole}
-                sessionId={sessionId}
                 onRetry={onRetry}
                 onDelete={onDelete}
               />

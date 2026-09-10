@@ -8,7 +8,6 @@ import QuickApproveDrawer from "./QuickApproveDrawer";
 export default function TriageView({
   pending,
   userRole,
-  sessionId,
   onApprove,
   onReject,
   onDelete,
@@ -118,7 +117,6 @@ export default function TriageView({
               key={req.id}
               request={req}
               userRole={userRole}
-              sessionId={sessionId}
               selectable
               selected={selected.has(req.id)}
               onToggleSelect={toggleSelect}

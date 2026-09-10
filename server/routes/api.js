@@ -32,6 +32,8 @@ import { searchYouTube } from "../youtube.js";
 import { isExplicitTitle } from "../cleanFilter.js";
 import { enqueueDownload, queueStatus } from "../downloadQueue.js";
 import logger from "../logger.js";
+import { signAccessToken, verifyAccessToken, accessTokenTtl } from "../accessToken.js";
+import { requestEvents } from "../requestEvents.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -102,6 +104,16 @@ function authenticateSession(req, res, next) {
   if (!session) return res.status(401).json({ error: "Not authenticated" });
   req.user = session;
   next();
+}
+
+// Session header first, falling back to a signed ?token= for the browser APIs
+// that can't send headers (<audio src>, EventSource).
+function resolveUser(req) {
+  const rawId = req.headers["x-session-id"];
+  if (rawId) return getSession(hashSessionId(rawId)) || null;
+  const payload = verifyAccessToken(req.query.token);
+  if (!payload) return null;
+  return { id: payload.id, role: payload.role, profile: payload.profile };
 }
 
 function requireParent(req, res, next) {
@@ -601,11 +613,47 @@ router.delete(
   },
 );
 
-// Audio stream — header auth, range request support
+// Short-lived token for <audio src> and EventSource, which can't send headers
+router.post("/access-token", authenticateSession, (req, res) => {
+  res.json({
+    token: signAccessToken(req.user),
+    expiresIn: accessTokenTtl,
+  });
+});
+
+// Server-sent request updates, replacing dashboard polling. EventSource can't
+// set headers, so it authenticates with ?token= from /access-token.
+router.get("/events", (req, res) => {
+  const user = resolveUser(req);
+  if (!user) return res.status(401).json({ error: "Not authenticated" });
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.write("retry: 5000\n\n");
+
+  const onChange = (change) => {
+    // Children only hear about their own profile
+    if (user.role !== "parent" && change.request?.profile !== user.profile) return;
+    res.write(`event: request\ndata: ${JSON.stringify(change)}\n\n`);
+  };
+  requestEvents.on("change", onChange);
+
+  // Comment frames keep proxies from closing an idle stream
+  const keepAlive = setInterval(() => res.write(": ping\n\n"), 25000);
+
+  req.on("close", () => {
+    clearInterval(keepAlive);
+    requestEvents.off("change", onChange);
+  });
+});
+
+// Audio stream — session header or signed token, range request support
 router.get("/stream/:profile/:filename", (req, res) => {
-  const rawId = req.headers["x-session-id"];
-  if (!rawId) return res.status(401).json({ error: "Not authenticated" });
-  const session = getSession(hashSessionId(rawId));
+  const session = resolveUser(req);
   if (!session) return res.status(401).json({ error: "Not authenticated" });
 
   const { profile, filename } = req.params;

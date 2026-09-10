@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import http from 'http';
 import request from 'supertest';
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jamjar-test-'));
@@ -231,6 +232,92 @@ describe('file routes', () => {
   it('requires authentication to stream', async () => {
     const res = await request(app).get('/api/stream/yoto/song.mp3');
     expect(res.status).toBe(401);
+
+    const badToken = await request(app).get(
+      '/api/stream/yoto/song.mp3?token=nope',
+    );
+    expect(badToken.status).toBe(401);
+  });
+
+  it('streams a file with a signed access token and honours ranges', async () => {
+    const dir = path.join(process.env.DOWNLOAD_DIR, 'yoto');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'token-song.mp3'), 'abcdefghij');
+
+    const tokenRes = await request(app)
+      .post('/api/access-token')
+      .set('X-Session-Id', childSession);
+    expect(tokenRes.status).toBe(200);
+    const { token } = tokenRes.body;
+
+    const full = await request(app).get(
+      `/api/stream/yoto/token-song.mp3?token=${token}`,
+    );
+    expect(full.status).toBe(200);
+
+    const ranged = await request(app)
+      .get(`/api/stream/yoto/token-song.mp3?token=${token}`)
+      .set('Range', 'bytes=0-3');
+    expect(ranged.status).toBe(206);
+    expect(ranged.headers['content-range']).toBe('bytes 0-3/10');
+
+    // A child's token can't reach the other profile
+    const otherProfile = await request(app).get(
+      `/api/stream/ipod/token-song.mp3?token=${token}`,
+    );
+    expect(otherProfile.status).toBe(403);
+  });
+});
+
+describe('events', () => {
+  it('requires a valid token for the SSE stream', async () => {
+    const anon = await request(app).get('/api/events');
+    expect(anon.status).toBe(401);
+
+    const forged = await request(app).get('/api/events?token=nope');
+    expect(forged.status).toBe(401);
+  });
+
+  it('pushes request changes to a subscribed parent', async () => {
+    const { token } = (
+      await request(app).post('/api/access-token').set('X-Session-Id', parentSession)
+    ).body;
+
+    // Supertest buffers whole responses, so talk to a real socket instead
+    const server = app.listen(0);
+    const { port } = server.address();
+    const res = await new Promise((resolve) => {
+      const req = http.get(
+        `http://127.0.0.1:${port}/api/events?token=${token}`,
+        resolve,
+      );
+      req.on('error', () => {});
+    });
+    expect(res.statusCode).toBe(200);
+
+    const received = new Promise((resolve, reject) => {
+      let buffer = '';
+      res.on('data', (chunk) => {
+        buffer += chunk.toString();
+        if (buffer.includes('event: request')) resolve(buffer);
+      });
+      res.on('error', reject);
+      setTimeout(() => reject(new Error('no event received')), 5000);
+    });
+
+    // Give the stream a tick to attach before publishing
+    await new Promise((r) => setTimeout(r, 200));
+    const { publishRequestChange } = await import('../server/requestEvents.js');
+    publishRequestChange({
+      type: 'updated',
+      request: { id: 'sse-1', profile: 'yoto', title: 'SSE Song', status: 'completed' },
+    });
+
+    const frame = await received;
+    expect(frame).toContain('SSE Song');
+
+    res.destroy();
+    await new Promise((r) => server.close(r));
   });
 });
 
