@@ -70,10 +70,6 @@ Copy `.env.example` to `.env` and configure:
 # Get one from: https://console.cloud.google.com/apis/credentials
 YOUTUBE_API_KEY=your_key_here
 
-# Internxt Credentials (for cloud storage)
-INTERNXT_EMAIL=your@email.com
-INTERNXT_PASSWORD=your_password
-INTERNXT_APP_KEY=your_app_key
 
 # Change the JWT secret in production
 JWT_SECRET=generate-a-random-string-here
@@ -144,7 +140,6 @@ pnpm seed
 - [ ] Parent knows how to approve/reject requests
 - [ ] Tutorial page reviewed with kids
 - [ ] Blocked keywords configured (if needed)
-- [ ] Internxt account set up for downloads
-- [ ] Kids know how to download from Internxt to their devices
+- [ ] Kids know how to copy downloads onto their Yoto/iPod
 
 Enjoy the music! 🎶

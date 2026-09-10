@@ -7,7 +7,6 @@ A **kid-friendly music/audiobook request app** with:
 - ✅ Tinder-style swipe UI for parent approvals
 - ✅ YouTube search with safe filtering
 - ✅ yt-dlp download pipeline
-- ✅ Internxt cloud storage integration
 - ✅ Content safety with blocked keywords
 - ✅ Real-time analytics dashboard
 - ✅ Dark mode toggle
@@ -17,7 +16,7 @@ A **kid-friendly music/audiobook request app** with:
 ## Architecture
 
 ```
-Kids' Devices → VPS (Express + SQLite) → Internxt (file storage)
+Kids' Devices → VPS (Express + SQLite) → local file storage
                        ↑
               Environment variables live here
               Nginx reverse proxy + SSL
@@ -56,7 +55,7 @@ Open http://localhost:3000
 3. **Select** a track → Click "Send Request"
 4. **Wait** for parent approval
 5. **Check** "My Requests" for status
-6. **Download** from Internxt when approved
+6. **Download** the file from JamJar when approved
 
 ### For Parents
 
@@ -86,23 +85,19 @@ Open http://localhost:3000
 ## File Flow
 
 ```
-Kid requests song → Parent approves → yt-dlp downloads 
-  → Internxt uploads → Kid gets link → Download to device
+Kid requests song → Parent approves → yt-dlp downloads
+  → file saved under DOWNLOAD_DIR → Kid streams/downloads it
 ```
 
 **Storage:**
 - SQLite database: Request metadata, user accounts
-- Internxt: Actual audio files (MP3)
-- VPS server: Temporary download cache (cleaned after upload)
+- VPS filesystem (`DOWNLOAD_DIR`): Actual audio files (MP3)
 
 ## Environment Variables
 
 ```env
 JWT_SECRET=random-string-here
 YOUTUBE_API_KEY=AIzaSy... (optional)
-INTERNXT_EMAIL=your@email.com (optional)
-INTERNXT_PASSWORD=your_password (optional)
-INTERNXT_APP_KEY=your_app_key (optional)
 NODE_ENV=production
 ```
 
@@ -122,7 +117,7 @@ NODE_ENV=production
 - **Animations:** Framer Motion
 - **State:** Zustand
 - **Downloader:** yt-dlp
-- **Storage:** Internxt SDK
+- **Storage:** Local filesystem (`DOWNLOAD_DIR`)
 - **Deploy:** Self-hosted VPS
 
 ## Costs
@@ -130,7 +125,6 @@ NODE_ENV=production
 - **VPS:** ~$5-10/mo (Hostinger, DigitalOcean, Hetzner, etc.)
 - **Domain:** ~$10/year
 - **SSL:** Free (Let's Encrypt)
-- **Internxt:** Free tier available (10GB)
 - **YouTube API:** Free (up to 10,000 queries/day)
 - **Total:** ~$6-11/mo
 
@@ -150,8 +144,7 @@ NODE_ENV=production
 2. **Test with the kids** (let them try it!)
 3. **Add YouTube API key** (for real search)
 4. **Install yt-dlp** on the VPS (for real downloads)
-5. **Add Internxt credentials** (for cloud uploads)
-6. **Enjoy!** 🎶
+5. **Enjoy!** 🎶
 
 ---
 

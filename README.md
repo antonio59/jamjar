@@ -7,7 +7,6 @@ Full-stack family music request app with Express, SQLite, and React.
 - Parent approval dashboard with Tinder-style swipe UI
 - YouTube search with safe filtering + playlist support
 - yt-dlp download pipeline
-- Internxt cloud storage integration
 - Real-time request tracking
 - Blocked keywords for content safety
 - Clean-version-only music: explicit/age-restricted results are filtered out and labelled clean edits ranked first
@@ -49,9 +48,6 @@ BACKUP_KEEP=7
 LOG_LEVEL=info
 ACCESS_TOKEN_SECRET=change-me
 ACCESS_TOKEN_TTL=300
-INTERNXT_EMAIL=your-email
-INTERNXT_PASSWORD=your-password
-INTERNXT_APP_KEY=your-app-key
 ```
 
 ## Operations
@@ -102,7 +98,7 @@ Use Cloudflare Tunnel for public access (no port forwarding needed).
 - **Animations:** Framer Motion
 - **State:** Zustand
 - **Downloader:** yt-dlp
-- **Storage:** Internxt SDK
+- **Storage:** Local filesystem (`DOWNLOAD_DIR`), served over authenticated routes
 
 ## Contributing
 

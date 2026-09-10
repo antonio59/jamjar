@@ -173,7 +173,7 @@ export default function RequestRow({
           )}
 
           {/* Audio preview — only when ready and has playable URL */}
-          {request.status === "completed" && request.internxt_url && (
+          {request.status === "completed" && request.file_path && (
             <MiniPlayer request={request} className="mt-3" />
           )}
 
@@ -273,7 +273,7 @@ function RowActions({
   }
 
   // Library — download is primary on ready music; re-download is recovery
-  if (request.status === "completed" && request.internxt_url) {
+  if (request.status === "completed" && request.file_path) {
     lanes.push(
       <div key="library" className="flex items-center gap-2">
         <DownloadAction request={request} />
@@ -330,7 +330,7 @@ function LifecycleAction({ request, onDelete }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const isActive = ACTIVE_STATUSES.has(request.status);
-  const hasFile = request.status === "completed" && !!request.internxt_url;
+  const hasFile = request.status === "completed" && !!request.file_path;
   const needsConfirm = hasFile; // only confirm when we'd lose a real file
 
   const verb = isActive ? "Cancel" : hasFile ? "Delete" : "Remove";
@@ -400,7 +400,7 @@ function MiniPlayer({ request, className = "" }) {
   const audioRef = useRef(null);
   const loadedRef = useRef(false);
 
-  const streamUrl = request.internxt_url?.replace("/api/downloads/", "/api/stream/");
+  const streamUrl = request.file_path?.replace("/api/downloads/", "/api/stream/");
 
   const handleToggle = async () => {
     if (state === "loading") return;
@@ -500,7 +500,7 @@ function DownloadAction({ request }) {
     setError(null);
     try {
       const { sessionId } = useStore.getState();
-      const res = await fetch(request.internxt_url, {
+      const res = await fetch(request.file_path, {
         headers: { "X-Session-Id": sessionId },
       });
       if (!res.ok) throw new Error("Download failed");

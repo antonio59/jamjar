@@ -439,10 +439,10 @@ router.delete(
           .json({ error: "You can only cancel your own requests" });
       }
 
-      if (existing.internxt_url) {
+      if (existing.file_path) {
         const filePath = path.join(
           DOWNLOAD_DIR,
-          existing.internxt_url.replace("/api/downloads/", ""),
+          existing.file_path.replace("/api/downloads/", ""),
         );
         if (fs.existsSync(filePath)) {
           try {
@@ -475,10 +475,10 @@ router.post(
       }
 
       // Delete old dummy/corrupt file if it exists on disk
-      if (existing.internxt_url) {
+      if (existing.file_path) {
         const filePath = path.join(
           DOWNLOAD_DIR,
-          existing.internxt_url.replace("/api/downloads/", "")
+          existing.file_path.replace("/api/downloads/", "")
         );
         if (fs.existsSync(filePath)) {
           const stat = fs.statSync(filePath);
@@ -508,8 +508,8 @@ router.post(
       const all = getAllRequests();
       const toRetry = all.filter((r) => {
         if (r.type === "audiobook" || r.status !== "completed") return false;
-        if (!r.internxt_url) return false;
-        const filePath = path.join(DOWNLOAD_DIR, r.internxt_url.replace("/api/downloads/", ""));
+        if (!r.file_path) return false;
+        const filePath = path.join(DOWNLOAD_DIR, r.file_path.replace("/api/downloads/", ""));
         if (!fs.existsSync(filePath)) return true;
         const stat = fs.statSync(filePath);
         return stat.size < 1024; // dummy file
@@ -517,8 +517,8 @@ router.post(
 
       toRetry.forEach((r) => {
         // Remove dummy file
-        if (r.internxt_url) {
-          const filePath = path.join(DOWNLOAD_DIR, r.internxt_url.replace("/api/downloads/", ""));
+        if (r.file_path) {
+          const filePath = path.join(DOWNLOAD_DIR, r.file_path.replace("/api/downloads/", ""));
           if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         }
         const updated = resetRequestForRetry(r.id);
@@ -767,7 +767,7 @@ router.get("/requests/:id/status", authenticateSession, (req, res) => {
 
     res.json({
       status: request.status,
-      download_url: request.internxt_url,
+      download_url: request.file_path,
       error_message: request.error_message,
     });
   } catch {

@@ -55,7 +55,7 @@ db.exec(`
     approved_at DATETIME,
     rejected_reason TEXT,
     downloaded_at DATETIME,
-    internxt_url TEXT,
+    file_path TEXT,
     error_message TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -101,6 +101,15 @@ const migrations = [
           WHERE artist IS NULL AND INSTR(title, ' - ') > 0
         `);
       } catch {} // Column may already exist on retry
+    },
+  },
+  {
+    version: 2,
+    up() {
+      // Files live on this server; the column never held an Internxt URL
+      try {
+        db.exec('ALTER TABLE requests RENAME COLUMN internxt_url TO file_path');
+      } catch {} // Fresh databases are already created with file_path
     },
   },
 ];
@@ -215,7 +224,7 @@ export function getArtists(profile = null) {
 // Resets a completed/failed request back to approved so it can be re-downloaded
 export function resetRequestForRetry(requestId) {
   db.prepare(
-    `UPDATE requests SET status = 'approved', error_message = NULL, internxt_url = NULL,
+    `UPDATE requests SET status = 'approved', error_message = NULL, file_path = NULL,
      downloaded_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).run(requestId);
   const request = getRequestById(requestId);
@@ -243,13 +252,13 @@ export function rejectRequest(requestId, reason) {
   return request;
 }
 
-export function updateRequestStatus(requestId, status, errorMessage = null, internxtUrl = null) {
+export function updateRequestStatus(requestId, status, errorMessage = null, filePath = null) {
   const stmt = db.prepare(
-    `UPDATE requests SET status = ?, error_message = ?, internxt_url = ?, 
+    `UPDATE requests SET status = ?, error_message = ?, file_path = ?, 
      downloaded_at = CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP ELSE downloaded_at END,
      updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   );
-  stmt.run(status, errorMessage, internxtUrl, status, requestId);
+  stmt.run(status, errorMessage, filePath, status, requestId);
   const request = getRequestById(requestId);
   publishRequestChange({ type: 'updated', request });
   return request;
