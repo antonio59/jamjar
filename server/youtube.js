@@ -1,5 +1,5 @@
 import axios from 'axios';
-import YtDlp from 'yt-dlp-wrap';
+import { createYtDlp, baseArgs } from './ytdlp.js';
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
 
@@ -37,23 +37,26 @@ export function extractPlaylistId(url) {
 // Get playlist tracks using yt-dlp
 export async function getPlaylistTracks(playlistUrl) {
   try {
-    const ytDlp = new YtDlp('yt-dlp');
-    
-    // Get playlist info without downloading
-    const result = await ytDlp.exec(playlistUrl, {
-      dumpJson: true,
-      extractFlat: true,
-      noPlaylist: false,
-    });
-    
-    const data = JSON.parse(result.stdout);
-    
-    return data.entries.map((entry, index) => ({
+    const ytDlp = createYtDlp();
+
+    // Metadata only — one JSON document for the whole playlist, no download
+    const stdout = await ytDlp.execPromise([
+      playlistUrl,
+      '--dump-single-json',
+      '--flat-playlist',
+      '--yes-playlist',
+      '--no-warnings',
+      ...baseArgs(),
+    ]);
+
+    const data = JSON.parse(stdout);
+
+    return (data.entries || []).map((entry, index) => ({
       id: entry.id,
       title: entry.title,
       url: `https://youtube.com/watch?v=${entry.id}`,
       thumbnail: entry.thumbnails?.[0]?.url || `https://img.youtube.com/vi/${entry.id}/mqdefault.jpg`,
-      duration: entry.duration ? formatDuration(entry.duration) : 'Unknown',
+      duration: entry.duration ? formatDuration(Math.round(entry.duration)) : 'Unknown',
       playlistIndex: index + 1,
       playlistTitle: data.title,
     }));

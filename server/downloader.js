@@ -1,13 +1,8 @@
-import YtDlpModule from "yt-dlp-wrap";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { updateRequestStatus } from "./database.js";
-
-// Node.js ESM/CJS interop: yt-dlp-wrap ships CJS with exports.default = YTDlpWrap
-// so the default import is the module namespace object, not the class directly
-const YtDlp = YtDlpModule.default ?? YtDlpModule;
-const YTDLP_BIN = process.env.YTDLP_PATH || "/usr/local/bin/yt-dlp";
+import { createYtDlp, baseArgs, YTDLP_BIN } from "./ytdlp.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,10 +29,7 @@ export async function downloadAndUpload(request) {
 
     const isYoto = request.profile === "yoto";
 
-    const ytDlp = new YtDlp(YTDLP_BIN);
-
-        const nodebin = process.execPath; // use the same node binary running this server
-    const cookiesFile = process.env.YTDLP_COOKIES_FILE;
+    const ytDlp = createYtDlp();
 
     // Build CLI args array — yt-dlp-wrap.exec() takes string[], not an options object
     const args = [
@@ -49,13 +41,8 @@ export async function downloadAndUpload(request) {
       "-o", outputFile,
       "--no-playlist",
       "--restrict-filenames",
-      // Use Node.js for PO-token generation so YouTube doesn't block as bot
-      "--js-runtimes", `node:${nodebin}`,
+      ...baseArgs(),
     ];
-
-    if (cookiesFile && fs.existsSync(cookiesFile)) {
-      args.push("--cookies", cookiesFile);
-    }
 
     if (isYoto) {
       // CBR 128kbps, 44.1kHz stereo, clean ID3v2.3 tags — Yoto player compatibility

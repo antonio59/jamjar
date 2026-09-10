@@ -29,7 +29,7 @@ import {
   purgeExpiredSessions,
 } from "../database.js";
 import { searchYouTube } from "../youtube.js";
-import { downloadAndUpload } from "../downloader.js";
+import { enqueueDownload, queueStatus } from "../downloadQueue.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -310,7 +310,7 @@ router.post("/requests", authenticateSession, (req, res) => {
     if (direct && req.user.role === "parent") {
       request = approveRequest(request.id, req.user.id);
       if (type !== "audiobook") {
-        downloadAndUpload(request).catch(console.error);
+        enqueueDownload(request);
       }
     }
 
@@ -353,7 +353,7 @@ router.post(
     try {
       const request = approveRequest(req.params.id, req.user.id);
       if (request.type !== "audiobook") {
-        downloadAndUpload(request).catch(console.error);
+        enqueueDownload(request);
       }
       res.json(request);
     } catch {
@@ -464,7 +464,7 @@ router.post(
       }
 
       const request = resetRequestForRetry(req.params.id);
-      downloadAndUpload(request).catch(console.error);
+      enqueueDownload(request);
       res.json(request);
     } catch (err) {
       res.status(500).json({ error: "Failed to retry download" });
@@ -496,10 +496,14 @@ router.post(
           if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         }
         const updated = resetRequestForRetry(r.id);
-        downloadAndUpload(updated).catch(console.error);
+        enqueueDownload(updated);
       });
 
-      res.json({ queued: toRetry.length, titles: toRetry.map((r) => r.title) });
+      res.json({
+        queued: toRetry.length,
+        titles: toRetry.map((r) => r.title),
+        queue: queueStatus(),
+      });
     } catch (err) {
       res.status(500).json({ error: "Failed to retry downloads" });
     }
