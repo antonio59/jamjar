@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { Sparkles, Check, X, ListChecks } from "lucide-react";
-import { Button, EmptyState, Badge, cx } from "../ui";
+import { Button, EmptyState, Badge } from "../ui";
 import RequestRow from "./RequestRow";
 import QuickApproveDrawer from "./QuickApproveDrawer";
 

@@ -37,7 +37,7 @@ const __dirname = path.dirname(__filename);
 const DOWNLOAD_DIR =
   process.env.DOWNLOAD_DIR || path.join(__dirname, "../../downloads");
 
-const TITLE_NOISE = /[\[(][\s\w]*(official\s*(lyric|music|audio|hd|4k)?(\s*video)?|lyric[s]?|audio|hd|4k|explicit|remaster(ed)?|visuali[sz]er|performance\s*video|topic)[\s\w]*[\])]/gi;
+const TITLE_NOISE = /[[(][\s\w]*(official\s*(lyric|music|audio|hd|4k)?(\s*video)?|lyric[s]?|audio|hd|4k|explicit|remaster(ed)?|visuali[sz]er|performance\s*video|topic)[\s\w]*[\])]/gi;
 
 // Generic / placeholder titles that should be flagged and improved, not stored
 // silently — the request UI now requires an editable title, so these only
@@ -69,7 +69,7 @@ const router = express.Router();
 
 // Purge expired sessions on startup and every 6 hours
 purgeExpiredSessions();
-setInterval(purgeExpiredSessions, 6 * 60 * 60 * 1000);
+setInterval(purgeExpiredSessions, 6 * 60 * 60 * 1000).unref();
 
 // Allowed external hostnames for video info and downloading
 const ALLOWED_VIDEO_HOSTS = new Set([

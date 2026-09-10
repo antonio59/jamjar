@@ -479,6 +479,7 @@ function MiniPlayer({ request, sessionId, className = "" }) {
 
 /* ─── Download Action — open rename dialog, then fetch + save with chosen name ─── */
 function sanitizeFilename(name) {
+  // eslint-disable-next-line no-control-regex -- control chars are illegal in filenames
   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "").trim().slice(0, 100);
 }
 

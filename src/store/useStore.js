@@ -4,7 +4,7 @@ import axios from 'axios';
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 // Translate technical API errors into kid-friendly messages
-function friendlyError(error) {
+export function friendlyError(error) {
   if (error.code === 'ERR_NETWORK') {
     return 'The app is not responding right now. Please try again or ask a grown-up for help.';
   }
