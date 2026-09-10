@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { createYtDlp, baseArgs } from './ytdlp.js';
+import { applyCleanFilter, isCleanTitle } from './cleanFilter.js';
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
 
@@ -99,12 +100,55 @@ function formatDuration(seconds) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export async function searchYouTube(query, type = 'music') {
+// One YouTube Data API search plus the batched contentDetails lookup that
+// gives us duration and the age-restriction rating.
+async function youtubeApiSearch(query, type) {
+  const searchResponse = await axios.get('https://www.googleapis.com/youtube/v3/search', {
+    params: {
+      part: 'snippet',
+      q: query,
+      type: 'video',
+      maxResults: 10,
+      safeSearch: 'strict',
+      videoDuration: type === 'music' ? 'short' : 'long',
+      key: YOUTUBE_API_KEY,
+    },
+  });
+
+  const items = searchResponse.data.items || [];
+  if (items.length === 0) return [];
+  const videoIds = items.map(item => item.id.videoId).join(',');
+
+  const durationMap = {};
+  const ratingMap = {};
+  try {
+    const detailsResponse = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
+      params: { part: 'contentDetails', id: videoIds, key: YOUTUBE_API_KEY },
+    });
+    for (const v of detailsResponse.data.items) {
+      durationMap[v.id] = parseIsoDuration(v.contentDetails.duration) || '';
+      ratingMap[v.id] = v.contentDetails.contentRating?.ytRating || null;
+    }
+  } catch {
+    // Details fetch failed — continue without duration/rating
+  }
+
+  return items.map(item => ({
+    id: item.id.videoId,
+    title: decodeHtmlEntities(item.snippet.title),
+    url: `https://youtube.com/watch?v=${item.id.videoId}`,
+    thumbnail: item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
+    duration: durationMap[item.id.videoId] || '',
+    ytRating: ratingMap[item.id.videoId] || null,
+  }));
+}
+
+export async function searchYouTube(query, type = 'music', { allowExplicit = false } = {}) {
   // If query is a YouTube URL, check if it's a playlist
   if (query.includes('youtube.com') || query.includes('youtu.be')) {
     if (isPlaylistUrl(query)) {
       const tracks = await getPlaylistTracks(query);
-      return tracks.map(t => ({
+      return applyCleanFilter(tracks, { allowExplicit }).map(t => ({
         ...t,
         isPlaylist: true,
         playlistTrackCount: tracks.length,
@@ -125,55 +169,31 @@ export async function searchYouTube(query, type = 'music') {
       } catch {
         // oEmbed failed — title stays empty, frontend will show URL or fallback
       }
-      return [{
+      return applyCleanFilter([{
         id: videoId,
         title,
         url: safeUrl,
         thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
         duration: 'Unknown',
-      }];
+      }], { allowExplicit });
     }
   }
 
   // If YouTube API key is configured, use real API
   if (YOUTUBE_API_KEY) {
     try {
-      const safeSearch = type === 'music' ? 'moderate' : 'strict';
-      const searchResponse = await axios.get('https://www.googleapis.com/youtube/v3/search', {
-        params: {
-          part: 'snippet',
-          q: query,
-          type: 'video',
-          maxResults: 10,
-          safeSearch,
-          videoDuration: type === 'music' ? 'short' : 'long',
-          key: YOUTUBE_API_KEY,
-        },
-      });
+      let results = applyCleanFilter(await youtubeApiSearch(query, type), { allowExplicit });
 
-      const items = searchResponse.data.items;
-      const videoIds = items.map(item => item.id.videoId).join(',');
-
-      // Fetch durations in one batch call
-      let durationMap = {};
-      try {
-        const detailsResponse = await axios.get('https://www.googleapis.com/youtube/v3/videos', {
-          params: { part: 'contentDetails', id: videoIds, key: YOUTUBE_API_KEY },
-        });
-        for (const v of detailsResponse.data.items) {
-          durationMap[v.id] = parseIsoDuration(v.contentDetails.duration) || '';
-        }
-      } catch {
-        // Duration fetch failed — continue without it
+      // Everything came back explicit — retry once asking YouTube directly for
+      // the clean cut before giving the kid an empty result list.
+      if (results.length === 0 && !allowExplicit && type === 'music' && !isCleanTitle(query)) {
+        results = applyCleanFilter(
+          await youtubeApiSearch(`${query} clean version`, type),
+          { allowExplicit },
+        );
       }
 
-      return items.map(item => ({
-        id: item.id.videoId,
-        title: decodeHtmlEntities(item.snippet.title),
-        url: `https://youtube.com/watch?v=${item.id.videoId}`,
-        thumbnail: item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
-        duration: durationMap[item.id.videoId] || '',
-      }));
+      return results;
     } catch (error) {
       console.error('YouTube API error:', error.message);
     }
@@ -181,7 +201,8 @@ export async function searchYouTube(query, type = 'music') {
   
   // Fall back to mock data
   const mockResults = type === 'music' ? mockMusicResults : mockAudiobookResults;
-  return mockResults.filter(r => 
-    r.title.toLowerCase().includes(query.toLowerCase())
+  return applyCleanFilter(
+    mockResults.filter(r => r.title.toLowerCase().includes(query.toLowerCase())),
+    { allowExplicit },
   );
 }

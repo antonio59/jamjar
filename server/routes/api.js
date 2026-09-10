@@ -29,6 +29,7 @@ import {
   purgeExpiredSessions,
 } from "../database.js";
 import { searchYouTube } from "../youtube.js";
+import { isExplicitTitle } from "../cleanFilter.js";
 import { enqueueDownload, queueStatus } from "../downloadQueue.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -175,7 +176,10 @@ router.get("/search", authenticateSession, async (req, res) => {
     if (!q || q.length < 2) {
       return res.json([]);
     }
-    const results = await searchYouTube(q, type || "music");
+    // Only a parent can deliberately look past the clean-version filter
+    const allowExplicit =
+      req.user.role === "parent" && req.query.allowExplicit === "true";
+    const results = await searchYouTube(q, type || "music", { allowExplicit });
     res.json(results);
   } catch {
     res.status(500).json({ error: "Search failed" });
@@ -291,6 +295,15 @@ router.post("/requests", authenticateSession, (req, res) => {
       return res.status(400).json({
         error: "Content blocked",
         violations: violations.map((kw) => kw.keyword),
+      });
+    }
+
+    // Explicit cuts never enter the library unless a parent opts in explicitly
+    const allowExplicit = req.user.role === "parent" && req.body.allowExplicit === true;
+    if (!allowExplicit && isExplicitTitle(title)) {
+      return res.status(400).json({
+        error: "Explicit version blocked",
+        explicit: true,
       });
     }
 

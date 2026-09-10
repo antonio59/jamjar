@@ -10,6 +10,7 @@ Full-stack family music request app with Express, SQLite, and React.
 - Internxt cloud storage integration
 - Real-time request tracking
 - Blocked keywords for content safety
+- Clean-version-only music: explicit/age-restricted results are filtered out and labelled clean edits ranked first
 - PIN-based authentication (simple, family-friendly)
 - Dark mode + toast notifications
 - Analytics dashboard with metrics
@@ -41,6 +42,7 @@ PORT=3001
 JWT_SECRET=your-secret-key
 YOUTUBE_API_KEY=your_youtube_api_key
 DOWNLOAD_DIR=./downloads
+MAX_CONCURRENT_DOWNLOADS=2
 DB_PATH=./data/jamjar.db
 INTERNXT_EMAIL=your-email
 INTERNXT_PASSWORD=your-password

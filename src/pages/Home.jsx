@@ -252,6 +252,8 @@ export default function Home() {
       if (status === 401 || status === 403)
         msg = "Please ask a grown-up to log in again.";
       if (status === 429) msg = "Going too fast! Wait a moment and try again.";
+      if (err.response?.data?.explicit)
+        msg = "That's the explicit version — look for the clean one instead.";
       showToast(msg, "error");
     } finally {
       setSubmitting(false);
@@ -607,6 +609,11 @@ function SourceStep(props) {
                     <p className="text-sm font-medium text-[var(--text-primary)] truncate">
                       {r.title}
                     </p>
+                    {r.isCleanLabelled && (
+                      <Badge tone="success" size="xs" className="mt-1">
+                        Clean
+                      </Badge>
+                    )}
                     <p className="text-xs text-[var(--text-muted)] truncate mt-0.5">
                       {type === "audiobook"
                         ? `${r.author}${r.year ? ` · ${r.year}` : ""}`
