@@ -365,6 +365,36 @@ describe('user management', () => {
     expect(relogin.status).toBe(200);
   });
 
+  it('revokes already-issued access tokens when the PIN changes', async () => {
+    const users = await request(app).get('/api/users').set('X-Session-Id', parentSession);
+    const kid = users.body.find((u) => u.username === 'kid');
+
+    const session = await login('kid', '5678');
+    const token = (
+      await request(app).post('/api/access-token').set('X-Session-Id', session)
+    ).body.token;
+    await request(app)
+      .post(`/api/users/${kid.id}/pin`)
+      .set('X-Session-Id', parentSession)
+      .send({ pin: '5678' });
+
+    const revoked = await request(app).get('/api/events').query({ token });
+    expect(revoked.status).toBe(401);
+  });
+
+  it('rejects oversized display names', async () => {
+    const res = await request(app)
+      .post('/api/users')
+      .set('X-Session-Id', parentSession)
+      .send({
+        username: 'longname',
+        pin: '1234',
+        profile: 'yoto',
+        displayName: 'x'.repeat(41),
+      });
+    expect(res.status).toBe(400);
+  });
+
   it('validates usernames, PINs and duplicates', async () => {
     const badPin = await request(app)
       .post('/api/users')

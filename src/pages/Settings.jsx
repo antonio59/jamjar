@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { KeyRound, Trash2, UserPlus } from "lucide-react";
+import { AlertTriangle, KeyRound, Trash2, UserPlus } from "lucide-react";
 import useStore from "../store/useStore";
 import {
   Badge,
   Button,
   Card,
   ConfirmDialog,
+  EmptyState,
   Input,
   Label,
   SectionHeader,
@@ -148,6 +149,8 @@ function AddChildForm({ onCreated }) {
 function PinField({ user, onDone }) {
   const setUserPin = useStore((s) => s.setUserPin);
   const showToast = useStore((s) => s.showToast);
+  const logout = useStore((s) => s.logout);
+  const isSelf = useStore((s) => s.user?.id === user.id);
   const [pin, setPin] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -157,6 +160,12 @@ function PinField({ user, onDone }) {
     try {
       await setUserPin(user.id, pin);
       setPin("");
+      // Rotating your own PIN kills the session this page is using
+      if (isSelf) {
+        showToast("PIN changed — sign in again", "success");
+        await logout();
+        return;
+      }
       showToast(`New PIN saved for ${user.display_name || user.username}`, "success");
       onDone();
     } catch (error) {
@@ -269,11 +278,19 @@ export default function Settings() {
   const getUsers = useStore((s) => s.getUsers);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
   const load = useCallback(() => {
     setLoading(true);
     getUsers()
-      .then(setUsers)
+      .then((list) => {
+        setUsers(list);
+        setLoadError(null);
+      })
+      .catch((error) => {
+        setUsers([]);
+        setLoadError(errorMessage(error, "Could not load accounts"));
+      })
       .finally(() => setLoading(false));
   }, [getUsers]);
 
@@ -288,6 +305,13 @@ export default function Settings() {
         />
         {loading ? (
           <SkeletonRow />
+        ) : loadError ? (
+          <EmptyState
+            icon={<AlertTriangle className="w-5 h-5" />}
+            title="Accounts didn't load"
+            description={loadError}
+            action={<Button onClick={load}>Try again</Button>}
+          />
         ) : (
           users.map((user) => (
             <UserRow key={user.id} user={user} onChanged={load} />

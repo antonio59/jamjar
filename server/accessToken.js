@@ -25,6 +25,7 @@ export function signAccessToken(user) {
       id: user.id,
       role: user.role,
       profile: user.profile,
+      iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + TTL_SECONDS,
     }),
   ).toString('base64url');

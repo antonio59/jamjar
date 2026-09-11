@@ -121,7 +121,9 @@ function resolveUser(req) {
   if (rawId) return getSession(hashSessionId(rawId)) || null;
   const payload = verifyAccessToken(req.query.token);
   if (!payload) return null;
-  return { id: payload.id, role: payload.role, profile: payload.profile };
+  const user = getUserById(payload.id);
+  if (!user || payload.iat * 1000 < user.credentials_changed_at) return null;
+  return { id: user.id, role: user.role, profile: user.profile };
 }
 
 function requireParent(req, res, next) {
@@ -624,6 +626,20 @@ router.delete(
 // Child account management (parent only)
 const PIN_PATTERN = /^\d{4}$/;
 const USERNAME_PATTERN = /^[a-z0-9_-]{2,20}$/;
+const MAX_DISPLAY_NAME = 40;
+const MAX_AVATAR = 8;
+
+function readProfileFields({ displayName, avatarEmoji }) {
+  const name = typeof displayName === "string" ? displayName.trim() : null;
+  const emoji = typeof avatarEmoji === "string" ? avatarEmoji.trim() : null;
+  if (name && [...name].length > MAX_DISPLAY_NAME) {
+    return { error: `Display name must be ${MAX_DISPLAY_NAME} characters or fewer` };
+  }
+  if (emoji && [...emoji].length > MAX_AVATAR) {
+    return { error: "Avatar must be a single emoji" };
+  }
+  return { displayName: name || null, avatarEmoji: emoji || null };
+}
 
 router.get("/users", authenticateSession, requireParent, (req, res) => {
   try {
@@ -653,13 +669,15 @@ router.post("/users", authenticateSession, requireParent, (req, res) => {
     if (getUserByUsername(name)) {
       return res.status(409).json({ error: "That username is taken" });
     }
+    const fields = readProfileFields({ displayName, avatarEmoji });
+    if (fields.error) return res.status(400).json({ error: fields.error });
     const user = createUser(
       name,
       pin,
       "child",
       profile,
-      typeof displayName === "string" && displayName.trim() ? displayName.trim() : name,
-      typeof avatarEmoji === "string" && avatarEmoji ? avatarEmoji : "🎵",
+      fields.displayName || name,
+      fields.avatarEmoji || "🎵",
     );
     logger.info("child account created", { by: req.user.id, userId: user.id });
     res.status(201).json(user);
@@ -670,8 +688,9 @@ router.post("/users", authenticateSession, requireParent, (req, res) => {
 
 router.patch("/users/:id", authenticateSession, requireParent, (req, res) => {
   try {
-    const { displayName, avatarEmoji } = req.body || {};
-    const updated = updateUser(req.params.id, { displayName, avatarEmoji });
+    const fields = readProfileFields(req.body || {});
+    if (fields.error) return res.status(400).json({ error: fields.error });
+    const updated = updateUser(req.params.id, fields);
     if (!updated) return res.status(404).json({ error: "User not found" });
     res.json(updated);
   } catch {

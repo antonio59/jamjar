@@ -112,6 +112,16 @@ const migrations = [
       } catch {} // Fresh databases are already created with file_path
     },
   },
+  {
+    version: 3,
+    up() {
+      try {
+        db.exec(
+          'ALTER TABLE users ADD COLUMN credentials_changed_at INTEGER NOT NULL DEFAULT 0'
+        );
+      } catch {} // Column may already exist on retry
+    },
+  },
 ];
 
 const applied = new Set(
@@ -141,7 +151,7 @@ export function getUserByUsername(username) {
 }
 
 export function getUserById(id) {
-  const stmt = db.prepare('SELECT id, username, role, profile, display_name, avatar_emoji, created_at FROM users WHERE id = ?');
+  const stmt = db.prepare('SELECT id, username, role, profile, display_name, avatar_emoji, created_at, credentials_changed_at FROM users WHERE id = ?');
   return stmt.get(id);
 }
 
@@ -154,9 +164,13 @@ export function listUsers() {
     .all();
 }
 
+// Bumping credentials_changed_at also invalidates access tokens issued before
+// the rotation, which outlive the sessions they were minted from.
 export function updateUserPin(id, pin) {
-  const stmt = db.prepare('UPDATE users SET pin = ? WHERE id = ?');
-  const info = stmt.run(bcrypt.hashSync(pin, 12), id);
+  const stmt = db.prepare(
+    'UPDATE users SET pin = ?, credentials_changed_at = ? WHERE id = ?'
+  );
+  const info = stmt.run(bcrypt.hashSync(pin, 12), Date.now(), id);
   if (info.changes === 0) return null;
   deleteSessionsForUser(id);
   return getUserById(id);
