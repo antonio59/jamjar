@@ -40,7 +40,10 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
           {
-            urlPattern: ({ url }) => /i\.ytimg\.com$/.test(url.hostname),
+            urlPattern: ({ url }) =>
+              ['img.youtube.com', 'i.ytimg.com', 'covers.openlibrary.org'].includes(
+                url.hostname,
+              ),
             handler: 'CacheFirst',
             options: {
               cacheName: 'thumbnails',
