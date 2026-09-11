@@ -104,6 +104,13 @@ describe('auth', () => {
       .set('Cookie', cookies)
       .set('X-CSRF-Token', readCookie(res, 'jj_csrf'));
     expect(withCsrf.status).toBe(200);
+
+    const forcedLogout = await request(app)
+      .post('/api/auth/logout')
+      .set('Cookie', cookies);
+    expect(forcedLogout.status).toBe(403);
+    const stillValid = await request(app).get('/api/auth/me').set('Cookie', cookies);
+    expect(stillValid.status).toBe(200);
   });
 });
 

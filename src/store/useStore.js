@@ -22,8 +22,8 @@ export function friendlyError(error) {
 const useStore = create((set, get) => ({
   // Auth state
   user: null,
-  // The session cookie is httpOnly, so the readable CSRF cookie is what tells
-  // the app a session probably exists; /auth/me is the real check.
+  // Optimistic hint so a returning user doesn't flash the login screen; the
+  // session cookie is httpOnly, so restoreSession()'s /auth/me is the real check.
   isAuthenticated: !!readCookie('jj_csrf'),
   accessToken: null,
   accessTokenExpiresAt: 0,
@@ -44,7 +44,6 @@ const useStore = create((set, get) => ({
   
   // Actions
   restoreSession: async () => {
-    if (!get().isAuthenticated) return false;
     try {
       const response = await api.get(`/auth/me`);
       set({ user: response.data, isAuthenticated: true });

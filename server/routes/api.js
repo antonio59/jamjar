@@ -133,6 +133,12 @@ function clearSessionCookies(res) {
 // Cookie-authenticated writes are the only ones a cross-site page can trigger,
 // so they carry a double-submit CSRF token. The X-Session-Id header path
 // (scripts, non-browser clients) cannot be forged cross-site at all.
+function csrfTokenMatches(req) {
+  const sent = req.headers["x-csrf-token"];
+  const expected = req.cookies?.[CSRF_COOKIE];
+  return Boolean(sent && expected && sent === expected);
+}
+
 function authenticateSession(req, res, next) {
   const headerId = req.headers["x-session-id"];
   const cookieId = req.cookies?.[SESSION_COOKIE];
@@ -143,12 +149,8 @@ function authenticateSession(req, res, next) {
     if (!headerId) clearSessionCookies(res);
     return res.status(401).json({ error: "Not authenticated" });
   }
-  if (!headerId && !SAFE_METHODS.has(req.method)) {
-    const sent = req.headers["x-csrf-token"];
-    const expected = req.cookies?.[CSRF_COOKIE];
-    if (!sent || !expected || sent !== expected) {
-      return res.status(403).json({ error: "Invalid CSRF token" });
-    }
+  if (!headerId && !SAFE_METHODS.has(req.method) && !csrfTokenMatches(req)) {
+    return res.status(403).json({ error: "Invalid CSRF token" });
   }
   req.user = session;
   next();
@@ -216,7 +218,11 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
 });
 
 router.post("/auth/logout", (req, res) => {
-  const rawId = req.headers["x-session-id"] || req.cookies?.[SESSION_COOKIE];
+  const headerId = req.headers["x-session-id"];
+  if (!headerId && !csrfTokenMatches(req)) {
+    return res.status(403).json({ error: "Invalid CSRF token" });
+  }
+  const rawId = headerId || req.cookies?.[SESSION_COOKIE];
   if (rawId) deleteSession(hashSessionId(rawId));
   clearSessionCookies(res);
   res.json({ success: true });
