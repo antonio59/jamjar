@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -39,9 +40,9 @@ app.use(helmet({
 // CORS — only allow the production origin
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' ? ALLOWED_ORIGIN : true,
-  methods: ['GET', 'POST', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'X-Session-Id'],
-  credentials: false,
+  methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'X-Session-Id', 'X-CSRF-Token'],
+  credentials: true,
 }));
 
 // Health checks run ahead of the rate limiter so monitoring never gets 429s
@@ -56,6 +57,7 @@ app.use(rateLimit({
   message: { error: 'Too many requests' },
 }));
 
+app.use(cookieParser());
 app.use(express.json({ limit: '100kb' }));
 app.use(requestLogger);
 

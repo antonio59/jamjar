@@ -105,11 +105,51 @@ function hashSessionId(id) {
   return createHash("sha256").update(id).digest("hex");
 }
 
+const SESSION_COOKIE = "jj_session";
+const CSRF_COOKIE = "jj_csrf";
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+function cookieOptions(httpOnly) {
+  return {
+    httpOnly,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: SESSION_MAX_AGE_MS,
+  };
+}
+
+function issueSessionCookies(res, rawSessionId) {
+  res.cookie(SESSION_COOKIE, rawSessionId, cookieOptions(true));
+  res.cookie(CSRF_COOKIE, randomBytes(24).toString("hex"), cookieOptions(false));
+}
+
+function clearSessionCookies(res) {
+  res.clearCookie(SESSION_COOKIE, { path: "/" });
+  res.clearCookie(CSRF_COOKIE, { path: "/" });
+}
+
+// Cookie-authenticated writes are the only ones a cross-site page can trigger,
+// so they carry a double-submit CSRF token. The X-Session-Id header path
+// (scripts, non-browser clients) cannot be forged cross-site at all.
 function authenticateSession(req, res, next) {
-  const rawId = req.headers["x-session-id"];
+  const headerId = req.headers["x-session-id"];
+  const cookieId = req.cookies?.[SESSION_COOKIE];
+  const rawId = headerId || cookieId;
   if (!rawId) return res.status(401).json({ error: "Not authenticated" });
   const session = getSession(hashSessionId(rawId));
-  if (!session) return res.status(401).json({ error: "Not authenticated" });
+  if (!session) {
+    if (!headerId) clearSessionCookies(res);
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  if (!headerId && !SAFE_METHODS.has(req.method)) {
+    const sent = req.headers["x-csrf-token"];
+    const expected = req.cookies?.[CSRF_COOKIE];
+    if (!sent || !expected || sent !== expected) {
+      return res.status(403).json({ error: "Invalid CSRF token" });
+    }
+  }
   req.user = session;
   next();
 }
@@ -117,7 +157,7 @@ function authenticateSession(req, res, next) {
 // Session header first, falling back to a signed ?token= for the browser APIs
 // that can't send headers (<audio src>, EventSource).
 function resolveUser(req) {
-  const rawId = req.headers["x-session-id"];
+  const rawId = req.headers["x-session-id"] || req.cookies?.[SESSION_COOKIE];
   if (rawId) return getSession(hashSessionId(rawId)) || null;
   const payload = verifyAccessToken(req.query.token);
   if (!payload) return null;
@@ -158,6 +198,7 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
 
     const rawSessionId = randomBytes(32).toString("hex");
     createSession(hashSessionId(rawSessionId), user.id);
+    issueSessionCookies(res, rawSessionId);
 
     res.json({
       user: {
@@ -168,7 +209,6 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
         display_name: user.display_name,
         avatar_emoji: user.avatar_emoji,
       },
-      sessionId: rawSessionId,
     });
   } catch {
     res.status(500).json({ error: "Login failed" });
@@ -176,8 +216,9 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
 });
 
 router.post("/auth/logout", (req, res) => {
-  const rawId = req.headers["x-session-id"];
+  const rawId = req.headers["x-session-id"] || req.cookies?.[SESSION_COOKIE];
   if (rawId) deleteSession(hashSessionId(rawId));
+  clearSessionCookies(res);
   res.json({ success: true });
 });
 

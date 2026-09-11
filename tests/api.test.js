@@ -19,10 +19,19 @@ let app;
 let parentSession;
 let childSession;
 
+function readCookie(res, name) {
+  const header = (res.headers['set-cookie'] || []).find((c) =>
+    c.startsWith(`${name}=`),
+  );
+  return header ? header.split(';')[0].slice(name.length + 1) : null;
+}
+
+// The session id only ever leaves the server in an httpOnly cookie; tests read
+// it back out and keep using the X-Session-Id header for brevity.
 async function login(username, pin) {
   const res = await request(app).post('/api/auth/login').send({ username, pin });
   expect(res.status).toBe(200);
-  return res.body.sessionId;
+  return readCookie(res, 'jj_session');
 }
 
 let db;
@@ -68,6 +77,33 @@ describe('auth', () => {
     await request(app).post('/api/auth/logout').set('X-Session-Id', sessionId);
     const after = await request(app).get('/api/auth/me').set('X-Session-Id', sessionId);
     expect(after.status).toBe(401);
+  });
+
+  it('authenticates from the session cookie without exposing the id to JS', async () => {
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ username: 'kid', pin: '5678' });
+    expect(res.body.sessionId).toBeUndefined();
+    const sessionCookie = (res.headers['set-cookie'] || []).find((c) =>
+      c.startsWith('jj_session='),
+    );
+    expect(sessionCookie).toMatch(/HttpOnly/i);
+    expect(sessionCookie).toMatch(/SameSite=Lax/i);
+
+    const cookies = (res.headers['set-cookie'] || [])
+      .map((c) => c.split(';')[0])
+      .join('; ');
+    const me = await request(app).get('/api/auth/me').set('Cookie', cookies);
+    expect(me.body).toMatchObject({ username: 'kid' });
+
+    const noCsrf = await request(app).post('/api/access-token').set('Cookie', cookies);
+    expect(noCsrf.status).toBe(403);
+
+    const withCsrf = await request(app)
+      .post('/api/access-token')
+      .set('Cookie', cookies)
+      .set('X-CSRF-Token', readCookie(res, 'jj_csrf'));
+    expect(withCsrf.status).toBe(200);
   });
 });
 

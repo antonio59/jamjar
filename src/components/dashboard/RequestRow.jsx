@@ -499,10 +499,7 @@ function DownloadAction({ request }) {
     setDownloading(true);
     setError(null);
     try {
-      const { sessionId } = useStore.getState();
-      const res = await fetch(request.file_path, {
-        headers: { "X-Session-Id": sessionId },
-      });
+      const res = await fetch(request.file_path, { credentials: "include" });
       if (!res.ok) throw new Error("Download failed");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
