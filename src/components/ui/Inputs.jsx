@@ -5,7 +5,7 @@ const baseField =
   "block w-full bg-[var(--surface)] border border-[var(--border-default)] rounded-[var(--r-md)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-disabled)] focus:border-[var(--border-focus)] focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
 
 export function Input({ size = "md", className = "", ...rest }) {
-  const sz = { sm: "h-8 px-2.5", md: "h-10 px-3", lg: "h-12 px-4" }[size];
+  const sz = { sm: "h-8 px-2.5 pointer-coarse:h-10", md: "h-10 px-3 pointer-coarse:h-11", lg: "h-12 px-4" }[size];
   return <input className={cx(baseField, sz, className)} {...rest} />;
 }
 
@@ -20,7 +20,7 @@ export function Textarea({ rows = 3, className = "", ...rest }) {
 }
 
 export function Select({ size = "md", className = "", children, ...rest }) {
-  const sz = { sm: "h-8 px-2 pr-7", md: "h-10 px-3 pr-8", lg: "h-12 px-4 pr-9" }[size];
+  const sz = { sm: "h-8 px-2 pr-7 pointer-coarse:h-10", md: "h-10 px-3 pr-8 pointer-coarse:h-11", lg: "h-12 px-4 pr-9" }[size];
   return (
     <div className="relative inline-block">
       <select
@@ -80,7 +80,7 @@ export function SearchField({
   className = "",
   ...rest
 }) {
-  const sz = { sm: "h-8 pl-8 pr-8 text-sm", md: "h-10 pl-9 pr-9 text-sm", lg: "h-12 pl-10 pr-10 text-base" }[size];
+  const sz = { sm: "h-8 pl-8 pr-8 text-sm pointer-coarse:h-10", md: "h-10 pl-9 pr-9 text-sm pointer-coarse:h-11", lg: "h-12 pl-10 pr-10 text-base" }[size];
   return (
     <div className={cx("relative", className)}>
       <Search

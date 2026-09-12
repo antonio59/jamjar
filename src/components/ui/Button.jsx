@@ -4,9 +4,9 @@ const base =
   "inline-flex items-center justify-center gap-1.5 font-medium rounded-[var(--r-md)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed select-none whitespace-nowrap";
 
 const sizes = {
-  xs: "text-xs h-7 px-2.5",
-  sm: "text-sm h-8 px-3",
-  md: "text-sm h-10 px-4",
+  xs: "text-xs h-7 px-2.5 pointer-coarse:h-9",
+  sm: "text-sm h-8 px-3 pointer-coarse:h-10",
+  md: "text-sm h-10 px-4 pointer-coarse:h-11",
   lg: "text-base h-12 px-5",
 };
 
@@ -69,7 +69,12 @@ export function IconButton({
   children,
   ...rest
 }) {
-  const sz = { xs: "h-7 w-7", sm: "h-8 w-8", md: "h-9 w-9", lg: "h-10 w-10" }[size];
+  const sz = {
+    xs: "h-7 w-7 pointer-coarse:h-9 pointer-coarse:w-9",
+    sm: "h-8 w-8 pointer-coarse:h-10 pointer-coarse:w-10",
+    md: "h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11",
+    lg: "h-10 w-10",
+  }[size];
   return (
     <button
       aria-label={label}

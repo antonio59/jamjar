@@ -73,7 +73,7 @@ export default function Drawer({
               <button
                 onClick={onClose}
                 aria-label="Close"
-                className="flex-shrink-0 h-8 w-8 inline-flex items-center justify-center rounded-[var(--r-md)] text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
+                className="flex-shrink-0 h-8 w-8 pointer-coarse:h-10 pointer-coarse:w-10 inline-flex items-center justify-center rounded-[var(--r-md)] text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text-primary)]"
               >
                 <X className="w-4 h-4" />
               </button>

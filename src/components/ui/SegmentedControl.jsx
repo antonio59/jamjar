@@ -10,8 +10,8 @@ export default function SegmentedControl({
   ariaLabel,
 }) {
   const sz = {
-    sm: "h-8 text-xs",
-    md: "h-10 text-sm",
+    sm: "h-8 text-xs pointer-coarse:h-10",
+    md: "h-10 text-sm pointer-coarse:h-11",
     lg: "h-12 text-base",
   }[size];
 
