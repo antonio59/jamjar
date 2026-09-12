@@ -3,6 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import http from 'http';
+import { createHash } from 'crypto';
 import request from 'supertest';
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jamjar-test-'));
@@ -361,6 +362,52 @@ describe('events', () => {
 
     res.destroy();
     await new Promise((r) => server.close(r));
+  });
+});
+
+describe('profiles + thumbnails', () => {
+  it('lists profiles publicly with only safe fields', async () => {
+    const res = await request(app).get('/api/auth/profiles');
+    expect(res.status).toBe(200);
+    const names = res.body.map((p) => p.username);
+    expect(names).toContain('parent');
+    expect(names).toContain('kid');
+    expect(res.body[0]).not.toHaveProperty('pin');
+    expect(res.body[0]).not.toHaveProperty('id');
+  });
+
+  it('requires auth and validates the thumbnail URL', async () => {
+    const anon = await request(app).get(
+      '/api/thumb?u=https://img.youtube.com/vi/x/mqdefault.jpg',
+    );
+    expect(anon.status).toBe(401);
+
+    const badHost = await request(app)
+      .get('/api/thumb?u=https://evil.example.com/x.jpg')
+      .set('X-Session-Id', childSession);
+    expect(badHost.status).toBe(400);
+
+    const plainHttp = await request(app)
+      .get('/api/thumb?u=http://img.youtube.com/vi/x/mqdefault.jpg')
+      .set('X-Session-Id', childSession);
+    expect(plainHttp.status).toBe(400);
+  });
+
+  it('serves a cached thumbnail with long cache headers', async () => {
+    const url = 'https://img.youtube.com/vi/test123/mqdefault.jpg';
+    const key = createHash('sha256').update(url).digest('hex').slice(0, 32);
+    const dir = path.join(process.env.DOWNLOAD_DIR, 'thumbs');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, `${key}.jpg`),
+      Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
+    );
+
+    const res = await request(app)
+      .get(`/api/thumb?u=${encodeURIComponent(url)}`)
+      .set('X-Session-Id', childSession);
+    expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toContain('immutable');
   });
 });
 

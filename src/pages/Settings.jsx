@@ -65,7 +65,7 @@ function AddChildForm({ onCreated }) {
     <Card as="form" onSubmit={submit}>
       <SectionHeader
         title="Add a child"
-        description="They sign in with this username and 4-digit PIN."
+        description="They sign in with this username and a 4–8 digit PIN."
       />
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
@@ -96,9 +96,9 @@ function AddChildForm({ onCreated }) {
             value={form.pin}
             onChange={set("pin")}
             inputMode="numeric"
-            pattern="\d{4}"
-            maxLength={4}
-            placeholder="4 digits"
+            pattern="\d{4,8}"
+            maxLength={8}
+            placeholder="4–8 digits"
             required
           />
         </div>
@@ -183,8 +183,8 @@ function PinField({ user, onDone }) {
         value={pin}
         onChange={(e) => setPin(e.target.value)}
         inputMode="numeric"
-        pattern="\d{4}"
-        maxLength={4}
+        pattern="\d{4,8}"
+        maxLength={8}
         placeholder="New PIN"
         aria-label={`New PIN for ${user.username}`}
         required

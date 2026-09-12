@@ -20,5 +20,25 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Route allowlisted thumbnail hosts through the server-side proxy — family
+// DNS filters and ad-blockers commonly block img.youtube.com entirely.
+const THUMB_PROXY_HOSTS = new Set([
+  'img.youtube.com',
+  'i.ytimg.com',
+  'covers.openlibrary.org',
+]);
+
+export function thumbUrl(url) {
+  if (!url) return null;
+  try {
+    if (THUMB_PROXY_HOSTS.has(new URL(url).hostname)) {
+      return `${API_URL}/thumb?u=${encodeURIComponent(url)}`;
+    }
+    return url;
+  } catch {
+    return null;
+  }
+}
+
 export { API_URL, readCookie };
 export default api;

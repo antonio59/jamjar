@@ -110,6 +110,22 @@ const CSRF_COOKIE = "jj_csrf";
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
+// Thumbnails are proxied so kids' devices only ever talk to this server —
+// DNS filters/ad-blockers commonly block img.youtube.com outright.
+const THUMB_HOSTS = new Set([
+  "img.youtube.com",
+  "i.ytimg.com",
+  "covers.openlibrary.org",
+]);
+// Not a dot-directory on purpose: res.sendFile refuses to serve dotfile paths.
+const THUMB_DIR = path.join(DOWNLOAD_DIR, "thumbs");
+const THUMB_TYPES = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+};
+
 function cookieOptions(httpOnly) {
   return {
     httpOnly,
@@ -226,6 +242,24 @@ router.post("/auth/logout", (req, res) => {
   if (rawId) deleteSession(hashSessionId(rawId));
   clearSessionCookies(res);
   res.json({ success: true });
+});
+
+// Public profile picker — same info the login screen has always shown
+// (names + avatars), just sourced from the DB so Settings changes appear.
+router.get("/auth/profiles", (req, res) => {
+  try {
+    res.json(
+      listUsers().map((u) => ({
+        username: u.username,
+        role: u.role,
+        profile: u.profile,
+        display_name: u.display_name,
+        avatar_emoji: u.avatar_emoji,
+      })),
+    );
+  } catch {
+    res.status(500).json({ error: "Failed to load profiles" });
+  }
 });
 
 router.get("/auth/me", authenticateSession, (req, res) => {
@@ -671,7 +705,7 @@ router.delete(
 );
 
 // Child account management (parent only)
-const PIN_PATTERN = /^\d{4}$/;
+const PIN_PATTERN = /^\d{4,8}$/;
 const USERNAME_PATTERN = /^[a-z0-9_-]{2,20}$/;
 const MAX_DISPLAY_NAME = 40;
 const MAX_AVATAR = 8;
@@ -708,7 +742,7 @@ router.post("/users", authenticateSession, requireParent, (req, res) => {
       });
     }
     if (!PIN_PATTERN.test(pin || "")) {
-      return res.status(400).json({ error: "PIN must be exactly 4 digits" });
+      return res.status(400).json({ error: "PIN must be 4–8 digits" });
     }
     if (profile !== "yoto" && profile !== "ipod") {
       return res.status(400).json({ error: "Profile must be yoto or ipod" });
@@ -750,7 +784,7 @@ router.post("/users/:id/pin", authenticateSession, requireParent, (req, res) => 
   try {
     const { pin } = req.body || {};
     if (!PIN_PATTERN.test(pin || "")) {
-      return res.status(400).json({ error: "PIN must be exactly 4 digits" });
+      return res.status(400).json({ error: "PIN must be 4–8 digits" });
     }
     const updated = updateUserPin(req.params.id, pin);
     if (!updated) return res.status(404).json({ error: "User not found" });
@@ -778,6 +812,53 @@ router.delete("/users/:id", authenticateSession, requireParent, (req, res) => {
     res.json({ success: true });
   } catch {
     res.status(500).json({ error: "Failed to delete user" });
+  }
+});
+
+// Proxy + disk-cache allowlisted thumbnail hosts. <img> sends the session
+// cookie same-origin, so this rides normal auth.
+router.get("/thumb", authenticateSession, async (req, res) => {
+  try {
+    const raw = req.query.u;
+    if (typeof raw !== "string" || raw.length > 500) {
+      return res.status(400).json({ error: "Invalid thumbnail URL" });
+    }
+    let parsed;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      return res.status(400).json({ error: "Invalid thumbnail URL" });
+    }
+    if (parsed.protocol !== "https:" || !THUMB_HOSTS.has(parsed.hostname)) {
+      return res.status(400).json({ error: "Host not allowed" });
+    }
+
+    const key = createHash("sha256").update(raw).digest("hex").slice(0, 32);
+    fs.mkdirSync(THUMB_DIR, { recursive: true });
+    const cached = fs
+      .readdirSync(THUMB_DIR)
+      .find((f) => f.startsWith(`${key}.`));
+    if (cached) {
+      res.set("Cache-Control", "public, max-age=604800, immutable");
+      return res.sendFile(path.join(THUMB_DIR, cached));
+    }
+
+    const upstream = await axios.get(raw, {
+      responseType: "arraybuffer",
+      timeout: 8000,
+      maxContentLength: 5 * 1024 * 1024,
+    });
+    const type = (upstream.headers["content-type"] || "").split(";")[0].trim();
+    const ext = THUMB_TYPES[type];
+    if (!ext || !upstream.data?.length) {
+      return res.status(502).json({ error: "Upstream response was not an image" });
+    }
+
+    fs.writeFileSync(path.join(THUMB_DIR, key + ext), upstream.data);
+    res.set("Cache-Control", "public, max-age=604800, immutable");
+    res.type(type).send(upstream.data);
+  } catch {
+    res.status(502).json({ error: "Thumbnail unavailable" });
   }
 });
 

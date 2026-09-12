@@ -16,6 +16,7 @@ import {
   XCircle,
 } from "lucide-react";
 import useStore from "../../store/useStore";
+import { thumbUrl } from "../../api/client";
 import {
   Badge,
   StatusBadge,
@@ -115,7 +116,7 @@ export default function RequestRow({
         <div className="flex-shrink-0">
           {request.thumbnail ? (
             <img
-              src={request.thumbnail}
+              src={thumbUrl(request.thumbnail)}
               alt=""
               className="w-12 h-12 rounded-[var(--r-md)] object-cover bg-[var(--surface-2)]"
             />

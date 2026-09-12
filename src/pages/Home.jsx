@@ -13,6 +13,7 @@ import {
   Loader2,
 } from "lucide-react";
 import useStore from "../store/useStore";
+import { thumbUrl } from "../api/client";
 import {
   Card,
   Stepper,
@@ -584,7 +585,7 @@ function SourceStep(props) {
                 >
                   {r.thumbnail ? (
                     <img
-                      src={r.thumbnail}
+                      src={thumbUrl(r.thumbnail)}
                       alt=""
                       className={cx(
                         "rounded object-cover bg-[var(--surface-2)] flex-shrink-0",
@@ -655,7 +656,7 @@ function SelectedTrackCard({ track, type, duplicateCount }) {
       <div className="flex items-center gap-3 p-3 bg-[var(--brand-soft)] border border-[var(--brand-soft-strong)] rounded-[var(--r-lg)]">
         {track.thumbnail ? (
           <img
-            src={track.thumbnail}
+            src={thumbUrl(track.thumbnail)}
             alt=""
             className={cx(
               "rounded object-cover bg-[var(--surface-2)] flex-shrink-0",
@@ -750,7 +751,7 @@ function UrlPasteSection({
             {urlPreview?.thumbnail && (
               <div className="flex items-center gap-3 p-3 bg-[var(--surface-2)] rounded-[var(--r-lg)] border border-[var(--border-subtle)]">
                 <img
-                  src={urlPreview.thumbnail}
+                  src={thumbUrl(urlPreview.thumbnail)}
                   alt=""
                   className="w-20 h-14 rounded object-cover"
                 />
@@ -823,7 +824,7 @@ function ConfirmStep({
       <div className="flex items-start gap-3 p-4 border border-[var(--border-subtle)] rounded-[var(--r-lg)] bg-[var(--surface-2)]">
         {thumbnail ? (
           <img
-            src={thumbnail}
+            src={thumbUrl(thumbnail)}
             alt=""
             className={cx(
               "rounded object-cover bg-[var(--surface-2)] flex-shrink-0",

@@ -16,6 +16,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Drawer, Button, Badge, cx } from "../ui";
+import { thumbUrl } from "../../api/client";
 
 const REJECTION_REASONS = [
   { id: "age", label: "Not age-appropriate" },
@@ -179,7 +180,7 @@ export default function QuickApproveDrawer({
             <div className="flex flex-col items-center text-center gap-3 pt-3 pb-1">
               {current.thumbnail ? (
                 <img
-                  src={current.thumbnail}
+                  src={thumbUrl(current.thumbnail)}
                   alt=""
                   className="w-28 h-28 rounded-[var(--r-lg)] object-cover shadow-[var(--shadow-sm)]"
                 />
