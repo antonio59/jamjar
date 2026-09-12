@@ -5,6 +5,81 @@ All notable changes to JamJar will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-09-12
+
+### Added
+
+- **Installable PWA**
+  - Web app manifest, home-screen icons, and a Workbox service worker
+  - API and audio streams are never cached — safe on shared family devices
+
+- **Live dashboard updates**
+  - Server-sent events replace dashboard polling (`/api/events`)
+  - Audio streaming with range support via short-lived signed tokens (`/api/stream`)
+
+- **Ops & observability**
+  - `/api/health` endpoint (DB + download-dir checks, queue status, last backup)
+  - Structured JSON logging across the server
+  - Daily SQLite backups via `VACUUM INTO`, keeping the last 7
+
+- **Parent settings screen**
+  - Create, rename and delete child accounts; assign Yoto/iPod device
+  - PIN rotation that signs the account out everywhere
+
+- **Clean-version-only music**
+  - Explicit titles filtered from search results and blocked at request time
+  - Parents can opt in per-request
+
+- **Download queue**
+  - yt-dlp runs capped at 2 concurrent downloads (`MAX_CONCURRENT_DOWNLOADS`)
+  - Playlist imports create one request per track via flat-playlist metadata
+
+- **Dynamic login screen**
+  - Profile picker is driven by `GET /api/auth/profiles` — children added in
+    Settings appear automatically (was a hardcoded list)
+  - JamJar branding, floating music notes, springy profile cards, animated PIN dots
+
+- **Thumbnail proxy** (`GET /api/thumb`)
+  - YouTube/OpenLibrary covers are fetched and disk-cached server-side
+  - Kids' devices only ever talk to the JamJar domain — fixes broken artwork on
+    networks or browsers that block YouTube image domains
+
+- **Tests & linting**
+  - Vitest API/unit suite (38 tests) and ESLint, both wired into CI
+
+### Changed
+
+- **Auth is now cookie-based**
+  - httpOnly session cookie + double-submit CSRF token (was `X-Session-Id` in
+    localStorage — no longer readable by scripts)
+  - Session IDs stored SHA-256-hashed in SQLite, 30-day expiry
+- PIN length unified to **4–8 digits** across login pad, Settings and API
+  (fixes a deadlock where a 4-digit PIN set in Settings couldn't be entered on
+  the old 6-digit-only pad)
+- Dropped dead Internxt references; `internxt_url` column renamed to `file_path`
+- Library view gained a sort dropdown (recent / oldest / title / downloaded)
+- Every request row has cancel/delete actions and rename-before-download
+- Full v3 UI redesign: design tokens, split dashboard views, stepped request flow
+
+### Fixed
+
+- `file_size_bytes` is persisted on download completion, so the dashboard's
+  broken-file filter finally has data to match (migration v4)
+- Unknown `/api/*` paths return a JSON 404 instead of the SPA shell
+- `POST /requests` no longer 500s when `searchQuery` is omitted
+- Deploy: `data/` directory fully gitignored; local DB artifacts can't be
+  committed again
+
+### Security
+
+- **47 dependency vulnerabilities cleared** (1 critical, 21 high) via a full
+  `pnpm update`; OSV scanner re-enabled and now reports 0 open alerts
+- `set-pins.js` wrote **plaintext PINs** — bcrypt verification could never
+  match, locking the account and storing the PIN unhashed. Both PIN scripts
+  now hash with bcrypt-12, bump `credentials_changed_at`, and revoke sessions
+- Helmet CSP, per-route auth, path-traversal guards, URL allowlists for video
+  info/downloads, login + global rate limiting, timing-safe PIN compare
+
 ## [2.2.0] - 2026-04-05
 
 ### Added
@@ -242,6 +317,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
+| 2.3.0 | 2026-09-12 | PWA, SSE live updates, parent settings, cookie auth + CSRF, thumbnail proxy, dynamic login, 47 vulns cleared |
+| 2.2.0 | 2026-04-05 | VPS deployment script, Nginx + SSL automation |
 | 2.1.0 | 2026-04-05 | Playlists, PIN auth, swipe UI, Railway deploy, toasts, dark mode |
 | 2.0.0 | 2026-04-05 | Express rewrite, full feature set, Internxt integration |
 | 1.0.0 | 2026-04-04 | Initial Convex prototype |
@@ -250,10 +327,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 1. Update `CHANGELOG.md` with new version
 2. Bump version in `package.json`
-3. Commit: `git commit -m "Release v2.1.0"`
-4. Tag: `git tag v2.1.0`
+3. Commit: `git commit -m "Release vX.Y.Z"`
+4. Tag: `git tag vX.Y.Z`
 5. Push: `git push origin main --tags`
-6. Deploy to Railway
+6. The Deploy workflow ships to the VPS automatically on push to main
 
 ## Semantic Versioning
 
