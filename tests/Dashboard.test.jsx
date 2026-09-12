@@ -115,6 +115,34 @@ describe('Dashboard — parent', () => {
       expect(useStore.getState().getPendingRequests.mock.calls.length).toBe(2),
     );
   });
+
+  it('maintenance tab lists blocked keywords and adds new ones', async () => {
+    const getBlockedKeywords = vi
+      .fn()
+      .mockResolvedValue([{ id: 'k1', keyword: 'scary', created_at: '2026-01-01' }]);
+    const addBlockedKeyword = vi.fn().mockResolvedValue({});
+    setStore({ getBlockedKeywords, addBlockedKeyword });
+    render(<Dashboard />);
+
+    await screen.findByText('Dashboard');
+    fireEvent.click(screen.getByRole('tab', { name: /maintenance/i }));
+
+    expect(await screen.findByText('Blocked keywords')).toBeInTheDocument();
+    expect(await screen.findByText('scary')).toBeInTheDocument();
+
+    fireEvent.change(
+      screen.getByPlaceholderText(/explicit, parody, scary/),
+      { target: { value: 'violence' } },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Block' }));
+
+    await waitFor(() =>
+      expect(addBlockedKeyword).toHaveBeenCalledWith('violence'),
+    );
+    await waitFor(() =>
+      expect(getBlockedKeywords.mock.calls.length).toBe(2),
+    );
+  });
 });
 
 describe('Dashboard — child', () => {

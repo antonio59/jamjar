@@ -295,7 +295,9 @@ export default function Settings() {
     [getUsers],
   );
 
-  useEffect(load, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
     <div className="space-y-6 max-w-3xl">
