@@ -67,6 +67,11 @@ app.use(express.static(path.join(__dirname, '../dist')));
 // API routes
 app.use('/api', apiRoutes);
 
+// Unknown API paths get a JSON 404, not the SPA shell
+app.use('/api/{*path}', (req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
 // Serve frontend for all other routes (Express 5 compatible)
 app.get('/{*path}', (req, res) => {
   const indexPath = path.join(__dirname, '../dist/index.html');
