@@ -97,12 +97,10 @@ export default function Home() {
     setDuplicateCount(0);
   };
 
-  // Duplicate check
+  // Duplicate check — resets happen in clearSelection/handleSearch so this
+  // effect only fetches for a newly selected track
   useEffect(() => {
-    if (!selectedTrack) {
-      setDuplicateCount(0);
-      return;
-    }
+    if (!selectedTrack) return;
     checkDuplicate(selectedTrack.title).then(setDuplicateCount);
   }, [selectedTrack, checkDuplicate]);
 
@@ -142,6 +140,7 @@ export default function Home() {
   const handleSearch = async (q) => {
     setQuery(q);
     setSelectedTrack(null);
+    setDuplicateCount(0);
     if (q.length < 2) {
       setResults([]);
       setSearchedOnce(false);

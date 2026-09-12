@@ -57,7 +57,8 @@ export default defineConfig({
     }),
   ],
   build: {
-    sourcemap: true,
+    // No prod sourcemaps — don't ship readable source for the whole app
+    sourcemap: false,
   },
   server: {
     port: 3000,

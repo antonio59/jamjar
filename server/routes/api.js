@@ -39,6 +39,7 @@ import {
 import { searchYouTube } from "../youtube.js";
 import { isExplicitTitle } from "../cleanFilter.js";
 import { enqueueDownload, queueStatus } from "../downloadQueue.js";
+import { healthDetails } from "./health.js";
 import logger from "../logger.js";
 import { signAccessToken, verifyAccessToken, accessTokenTtl } from "../accessToken.js";
 import { requestEvents } from "../requestEvents.js";
@@ -107,6 +108,9 @@ function hashSessionId(id) {
 
 const SESSION_COOKIE = "jj_session";
 const CSRF_COOKIE = "jj_csrf";
+// httpOnly cookie carrying the short-lived media token, so <audio> and
+// EventSource authenticate without putting it in URLs (and access logs).
+const MEDIA_COOKIE = "jj_media";
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -144,6 +148,7 @@ function issueSessionCookies(res, rawSessionId) {
 function clearSessionCookies(res) {
   res.clearCookie(SESSION_COOKIE, { path: "/" });
   res.clearCookie(CSRF_COOKIE, { path: "/" });
+  res.clearCookie(MEDIA_COOKIE, { path: "/" });
 }
 
 // Cookie-authenticated writes are the only ones a cross-site page can trigger,
@@ -172,12 +177,13 @@ function authenticateSession(req, res, next) {
   next();
 }
 
-// Session header first, falling back to a signed ?token= for the browser APIs
-// that can't send headers (<audio src>, EventSource).
+// Session first, then the httpOnly media cookie minted by /access-token, then
+// a signed ?token= kept for non-browser clients that can't carry cookies.
 function resolveUser(req) {
   const rawId = req.headers["x-session-id"] || req.cookies?.[SESSION_COOKIE];
   if (rawId) return getSession(hashSessionId(rawId)) || null;
-  const payload = verifyAccessToken(req.query.token);
+  const token = req.cookies?.[MEDIA_COOKIE] || req.query.token;
+  const payload = verifyAccessToken(token);
   if (!payload) return null;
   const user = getUserById(payload.id);
   if (!user || payload.iat * 1000 < user.credentials_changed_at) return null;
@@ -862,16 +868,27 @@ router.get("/thumb", authenticateSession, async (req, res) => {
   }
 });
 
-// Short-lived token for <audio src> and EventSource, which can't send headers
+// Mints the short-lived media credential. The httpOnly cookie lets <audio>
+// and EventSource authenticate silently; the JSON token remains for
+// non-browser clients that can't carry cookies.
 router.post("/access-token", authenticateSession, (req, res) => {
-  res.json({
-    token: signAccessToken(req.user),
-    expiresIn: accessTokenTtl,
+  const token = signAccessToken(req.user);
+  res.cookie(MEDIA_COOKIE, token, {
+    ...cookieOptions(true),
+    maxAge: accessTokenTtl * 1000,
   });
+  res.json({ token, expiresIn: accessTokenTtl });
 });
 
-// Server-sent request updates, replacing dashboard polling. EventSource can't
-// set headers, so it authenticates with ?token= from /access-token.
+// Full health report for the logged-in parent; the public /api/health route
+// in health.js deliberately exposes only liveness.
+router.get("/health/details", authenticateSession, requireParent, (req, res) => {
+  const details = healthDetails();
+  res.status(details.status === "ok" ? 200 : 503).json(details);
+});
+
+// Server-sent request updates, replacing dashboard polling. Auth comes from
+// the jj_media cookie — tokens in URLs end up in proxy access logs.
 router.get("/events", (req, res) => {
   const user = resolveUser(req);
   if (!user) return res.status(401).json({ error: "Not authenticated" });

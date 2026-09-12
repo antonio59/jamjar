@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { motion } from "framer-motion";
 import {
   Music,
@@ -420,10 +420,12 @@ function MiniPlayer({ request, className = "" }) {
     setState("loading");
     setError(null);
     try {
+      // Mints the jj_media cookie the <audio> element authenticates with —
+      // keeps the token out of URLs and proxy access logs.
       const token = await getAccessToken();
       if (!token) throw new Error("Session expired — log in again");
       if (audioRef.current) {
-        audioRef.current.src = `${streamUrl}?token=${encodeURIComponent(token)}`;
+        audioRef.current.src = streamUrl;
         audioRef.current.load();
         loadedRef.current = true;
         await audioRef.current.play().catch(() => {});
@@ -487,9 +489,10 @@ function DownloadAction({ request }) {
   const [filename, setFilename] = useState(defaultName);
   const [downloading, setDownloading] = useState(false);
 
-  useEffect(() => {
-    if (open) setFilename(defaultName);
-  }, [open, defaultName]);
+  const openDialog = () => {
+    setFilename(defaultName);
+    setOpen(true);
+  };
 
   const handleDownload = async () => {
     const safeName = sanitizeFilename(filename);
@@ -524,7 +527,7 @@ function DownloadAction({ request }) {
       <Button
         size="sm"
         variant="primary"
-        onClick={() => setOpen(true)}
+        onClick={openDialog}
         iconLeft={<Download className="w-3.5 h-3.5" />}
       >
         Download

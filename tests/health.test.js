@@ -28,15 +28,17 @@ afterAll(() => {
 });
 
 describe('GET /api/health', () => {
-  it('reports liveness without authentication', async () => {
+  it('reports liveness without leaking internals', async () => {
     const res = await request(app).get('/api/health');
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       status: 'ok',
       checks: { database: 'ok', downloads: 'ok' },
     });
-    expect(res.body.queue).toMatchObject({ active: 0, pending: 0 });
-    expect(typeof res.body.uptimeSeconds).toBe('number');
+    expect(res.body.version).toBeUndefined();
+    expect(res.body.uptimeSeconds).toBeUndefined();
+    expect(res.body.queue).toBeUndefined();
+    expect(res.body.lastBackup).toBeUndefined();
   });
 
   it('degrades to 503 when the download directory is gone', async () => {
@@ -44,8 +46,49 @@ describe('GET /api/health', () => {
     const res = await request(app).get('/api/health');
     expect(res.status).toBe(503);
     expect(res.body.status).toBe('degraded');
-    expect(res.body.checks.downloads).toMatch(/not writable/);
+    expect(res.body.checks.downloads).toBe('error');
     fs.mkdirSync(process.env.DOWNLOAD_DIR, { recursive: true });
+  });
+});
+
+describe('GET /api/health/details', () => {
+  it('rejects anonymous and child callers', async () => {
+    expect((await request(app).get('/api/health/details')).status).toBe(401);
+
+    const { createUser } = await import('../server/database.js');
+    createUser('healthkid', '5678', 'child', 'yoto');
+    const login = await request(app)
+      .post('/api/auth/login')
+      .send({ username: 'healthkid', pin: '5678' });
+    const cookies = login.headers['set-cookie']
+      .map((c) => c.split(';')[0])
+      .join('; ');
+    const res = await request(app)
+      .get('/api/health/details')
+      .set('Cookie', cookies);
+    expect(res.status).toBe(403);
+  });
+
+  it('serves the full report to the parent', async () => {
+    const { createUser } = await import('../server/database.js');
+    createUser('healthparent', '1234', 'parent');
+    const login = await request(app)
+      .post('/api/auth/login')
+      .send({ username: 'healthparent', pin: '1234' });
+    const cookies = login.headers['set-cookie']
+      .map((c) => c.split(';')[0])
+      .join('; ');
+    const res = await request(app)
+      .get('/api/health/details')
+      .set('Cookie', cookies);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      status: 'ok',
+      checks: { database: 'ok', downloads: 'ok' },
+      queue: { active: 0, pending: 0 },
+    });
+    expect(typeof res.body.version).toBe('string');
+    expect(typeof res.body.uptimeSeconds).toBe('number');
   });
 });
 

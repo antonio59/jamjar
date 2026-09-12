@@ -39,24 +39,37 @@ export default function Dashboard() {
 
   const [pending, setPending] = useState([]);
   const [allRequests, setAllRequests] = useState([]);
+  const [weeklyCount, setWeeklyCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(
     user.role === "parent" ? "triage" : "library",
   );
   const [uploadGuideRequest, setUploadGuideRequest] = useState(null);
 
-  const loadData = useCallback(async () => {
-    if (user.role === "parent") {
-      const [pendingData, allData] = await Promise.all([
-        getPendingRequests(),
-        getRequests(),
-      ]);
-      setPending(pendingData);
-      setAllRequests(allData);
-    } else {
-      setAllRequests(await getRequests());
-    }
-    setLoading(false);
+  const loadData = useCallback(() => {
+    const allP =
+      user.role === "parent"
+        ? Promise.all([getPendingRequests(), getRequests()]).then(
+            ([pendingData, allData]) => {
+              setPending(pendingData);
+              return allData;
+            },
+          )
+        : getRequests();
+    allP
+      .then((all) => {
+        setAllRequests(all);
+        const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        setWeeklyCount(
+          all.filter(
+            (r) =>
+              r.status === "completed" &&
+              r.downloaded_at &&
+              new Date(r.downloaded_at).getTime() >= cutoff,
+          ).length,
+        );
+      })
+      .finally(() => setLoading(false));
   }, [user.role, getPendingRequests, getRequests]);
 
   useEffect(() => {
@@ -78,18 +91,16 @@ export default function Dashboard() {
 
     const connect = async () => {
       if (cancelled) return;
-      let token;
+      // Mints the jj_media cookie EventSource authenticates with — keeps the
+      // token out of URLs and proxy access logs.
       try {
-        token = await getAccessToken();
+        await getAccessToken();
       } catch {
-        token = null;
+        return startPolling();
       }
       if (cancelled) return;
-      if (!token) return startPolling();
 
-      source = new EventSource(
-        `${API_URL}/events?token=${encodeURIComponent(token)}`,
-      );
+      source = new EventSource(`${API_URL}/events`);
 
       source.addEventListener("request", (event) => {
         attempts = 0;
@@ -100,8 +111,8 @@ export default function Dashboard() {
         loadData();
       });
 
-      // The browser retries by itself, but with the now-expired token in the
-      // URL — reconnect with a fresh one instead.
+      // The browser retries by itself, but the media cookie may have expired
+      // — reconnect and re-mint instead.
       source.onerror = () => {
         source.close();
         source = null;
@@ -142,15 +153,7 @@ export default function Dashboard() {
     [allRequests],
   );
 
-  const completedThisWeek = useMemo(() => {
-    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    return allRequests.filter(
-      (r) =>
-        r.status === "completed" &&
-        r.downloaded_at &&
-        new Date(r.downloaded_at).getTime() >= cutoff,
-    ).length;
-  }, [allRequests]);
+  const completedThisWeek = weeklyCount;
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleApprove = async (id) => {

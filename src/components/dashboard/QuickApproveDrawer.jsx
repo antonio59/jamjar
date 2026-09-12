@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   motion,
   AnimatePresence,
@@ -45,9 +45,30 @@ export default function QuickApproveDrawer({
 
   const current = requests[0];
 
-  useEffect(() => {
+  // Reset progress when the drawer closes — adjusts state during render per
+  // the "compare to previous props" pattern
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (!open) setProcessed(0);
-  }, [open]);
+  }
+
+  const handleApprove = useCallback(async () => {
+    if (!current) return;
+    await controls.start({
+      x: 320,
+      opacity: 0,
+      transition: { duration: 0.22, ease: "easeIn" },
+    });
+    onApprove(current.id);
+    setProcessed((n) => n + 1);
+    controls.set({ x: 0, opacity: 1 });
+  }, [current, controls, onApprove]);
+
+  const openRejectModal = useCallback(() => {
+    if (!current) return;
+    setShowRejectModal(true);
+  }, [current]);
 
   useEffect(() => {
     if (!open || !current) return;
@@ -58,24 +79,7 @@ export default function QuickApproveDrawer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, current, showRejectModal]);
-
-  const handleApprove = async () => {
-    if (!current) return;
-    await controls.start({
-      x: 320,
-      opacity: 0,
-      transition: { duration: 0.22, ease: "easeIn" },
-    });
-    onApprove(current.id);
-    setProcessed((n) => n + 1);
-    controls.set({ x: 0, opacity: 1 });
-  };
-
-  const openRejectModal = () => {
-    if (!current) return;
-    setShowRejectModal(true);
-  };
+  }, [open, current, showRejectModal, handleApprove, openRejectModal]);
 
   const confirmReject = async () => {
     const reason =

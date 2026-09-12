@@ -311,6 +311,29 @@ describe('file routes', () => {
     );
     expect(otherProfile.status).toBe(403);
   });
+
+  it('mints an httpOnly media cookie that authenticates streams', async () => {
+    const dir = path.join(process.env.DOWNLOAD_DIR, 'yoto');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'cookie-song.mp3'), 'cookiebytes');
+
+    const tokenRes = await request(app)
+      .post('/api/access-token')
+      .set('X-Session-Id', childSession);
+    expect(tokenRes.status).toBe(200);
+
+    const mediaCookie = (tokenRes.headers['set-cookie'] || []).find((c) =>
+      c.startsWith('jj_media='),
+    );
+    expect(mediaCookie).toBeDefined();
+    expect(mediaCookie).toMatch(/HttpOnly/i);
+
+    // No ?token= needed — the cookie alone authenticates the stream
+    const res = await request(app)
+      .get('/api/stream/yoto/cookie-song.mp3')
+      .set('Cookie', mediaCookie.split(';')[0]);
+    expect(res.status).toBe(200);
+  });
 });
 
 describe('events', () => {

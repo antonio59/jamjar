@@ -76,18 +76,18 @@ export default function Login() {
   const { login, showToast } = useStore();
   const handlersRef = useRef({});
 
-  const loadProfiles = useCallback(async () => {
-    setProfilesError(false);
-    try {
-      const res = await api.get("/auth/profiles");
-      // Kids first, grown-ups last
-      const sorted = [...res.data].sort((a, b) =>
-        a.role === b.role ? 0 : a.role === "parent" ? 1 : -1,
-      );
-      setProfiles(sorted);
-    } catch {
-      setProfilesError(true);
-    }
+  const loadProfiles = useCallback(() => {
+    api
+      .get("/auth/profiles")
+      .then((res) => {
+        // Kids first, grown-ups last
+        const sorted = [...res.data].sort((a, b) =>
+          a.role === b.role ? 0 : a.role === "parent" ? 1 : -1,
+        );
+        setProfiles(sorted);
+        setProfilesError(false);
+      })
+      .catch(() => setProfilesError(true));
   }, []);
 
   useEffect(() => {
@@ -128,8 +128,17 @@ export default function Login() {
     setError("");
   };
 
-  // Keep latest handlers in a ref so keyboard listener doesn't re-bind every render
-  handlersRef.current = { handlePinPress, handleBackspace, handleBack, submitPin, pin };
+  // Keep latest handlers in a ref so keyboard listener doesn't re-bind every
+  // render — refs are written in an effect, not during render
+  useEffect(() => {
+    handlersRef.current = {
+      handlePinPress,
+      handleBackspace,
+      handleBack,
+      submitPin,
+      pin,
+    };
+  });
 
   useEffect(() => {
     if (!selectedProfile) return;

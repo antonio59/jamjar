@@ -280,9 +280,9 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
-  const load = useCallback(() => {
-    setLoading(true);
-    getUsers()
+  const load = useCallback(
+    () =>
+      getUsers()
       .then((list) => {
         setUsers(list);
         setLoadError(null);
@@ -291,8 +291,9 @@ export default function Settings() {
         setUsers([]);
         setLoadError(errorMessage(error, "Could not load accounts"));
       })
-      .finally(() => setLoading(false));
-  }, [getUsers]);
+      .finally(() => setLoading(false)),
+    [getUsers],
+  );
 
   useEffect(load, [load]);
 
@@ -310,7 +311,16 @@ export default function Settings() {
             icon={<AlertTriangle className="w-5 h-5" />}
             title="Accounts didn't load"
             description={loadError}
-            action={<Button onClick={load}>Try again</Button>}
+            action={
+              <Button
+                onClick={() => {
+                  setLoading(true);
+                  load();
+                }}
+              >
+                Try again
+              </Button>
+            }
           />
         ) : (
           users.map((user) => (

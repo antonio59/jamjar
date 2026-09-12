@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Wrench, Shield, RefreshCw, ShieldAlert } from "lucide-react";
 import useStore from "../../store/useStore";
 import { Card, SectionHeader, Button, EmptyState, Input, Badge, cx } from "../ui";
@@ -78,19 +78,18 @@ function BlockedKeywords() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
 
+  const load = useCallback(
+    () =>
+      getBlockedKeywords()
+        .then(setKeywords)
+        .catch(() => {})
+        .finally(() => setLoading(false)),
+    [getBlockedKeywords],
+  );
+
   useEffect(() => {
     load();
-  }, []);
-
-  const load = async () => {
-    try {
-      const data = await getBlockedKeywords();
-      setKeywords(data);
-    } catch {
-      // ignore
-    }
-    setLoading(false);
-  };
+  }, [load]);
 
   const handleAdd = async (e) => {
     e.preventDefault();

@@ -13,33 +13,49 @@ const { version } = JSON.parse(
 const DOWNLOAD_DIR =
   process.env.DOWNLOAD_DIR || path.join(__dirname, '../../downloads');
 
-const router = express.Router();
-
-// Unauthenticated so systemd/nginx/uptime checks can hit it; reports no data
-// beyond liveness of the two things that break in production.
-router.get('/health', (req, res) => {
+function runChecks() {
   const checks = { database: 'ok', downloads: 'ok' };
 
   try {
     db.prepare('SELECT 1').get();
-  } catch (err) {
-    checks.database = `error: ${err.message}`;
+  } catch {
+    checks.database = 'error';
   }
 
   try {
     fs.accessSync(DOWNLOAD_DIR, fs.constants.W_OK);
   } catch {
-    checks.downloads = 'error: download directory not writable';
+    checks.downloads = 'error';
   }
 
+  return checks;
+}
+
+// Full report for the authenticated /api/health/details route in api.js.
+export function healthDetails() {
+  const checks = runChecks();
   const healthy = Object.values(checks).every((c) => c === 'ok');
-  res.status(healthy ? 200 : 503).json({
+  return {
     status: healthy ? 'ok' : 'degraded',
     version,
     uptimeSeconds: Math.round(process.uptime()),
     checks,
     queue: queueStatus(),
     lastBackup: lastBackup(),
+  };
+}
+
+const router = express.Router();
+
+// Unauthenticated so systemd/nginx/uptime checks can hit it — deliberately
+// leaks nothing beyond "is it alive": no version, uptime, internals, or
+// error strings that could help enumerate the deployment.
+router.get('/health', (req, res) => {
+  const checks = runChecks();
+  const healthy = Object.values(checks).every((c) => c === 'ok');
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'ok' : 'degraded',
+    checks,
   });
 });
 

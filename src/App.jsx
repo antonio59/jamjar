@@ -36,7 +36,7 @@ export default function App() {
 
   useEffect(() => {
     restoreSession().finally(() => setLoading(false));
-  }, []);
+  }, [restoreSession]);
 
   if (loading) return <LoadingScreen />;
   if (!isAuthenticated || !user) return <Login />;
