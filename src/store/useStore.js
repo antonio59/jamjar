@@ -1,10 +1,8 @@
 import { create } from 'zustand';
-import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+import api, { readCookie } from '../api/client.js';
 
 // Translate technical API errors into kid-friendly messages
-function friendlyError(error) {
+export function friendlyError(error) {
   if (error.code === 'ERR_NETWORK') {
     return 'The app is not responding right now. Please try again or ask a grown-up for help.';
   }
@@ -24,8 +22,11 @@ function friendlyError(error) {
 const useStore = create((set, get) => ({
   // Auth state
   user: null,
-  sessionId: localStorage.getItem('sessionId'),
-  isAuthenticated: !!localStorage.getItem('sessionId'),
+  // Optimistic hint so a returning user doesn't flash the login screen; the
+  // session cookie is httpOnly, so restoreSession()'s /auth/me is the real check.
+  isAuthenticated: !!readCookie('jj_csrf'),
+  accessToken: null,
+  accessTokenExpiresAt: 0,
   
   // Toast notifications
   toast: null,
@@ -43,27 +44,20 @@ const useStore = create((set, get) => ({
   
   // Actions
   restoreSession: async () => {
-    const { sessionId } = get();
-    if (!sessionId) return false;
     try {
-      const response = await axios.get(`${API_URL}/auth/me`, {
-        headers: { 'X-Session-Id': sessionId },
-      });
+      const response = await api.get(`/auth/me`);
       set({ user: response.data, isAuthenticated: true });
       return true;
     } catch {
-      localStorage.removeItem('sessionId');
-      set({ user: null, sessionId: null, isAuthenticated: false });
+      set({ user: null, isAuthenticated: false });
       return false;
     }
   },
 
   login: async (username, pin) => {
     try {
-      const response = await axios.post(`${API_URL}/auth/login`, { username, pin });
-      const { user, sessionId } = response.data;
-      localStorage.setItem('sessionId', sessionId);
-      set({ user, sessionId, isAuthenticated: true });
+      const response = await api.post(`/auth/login`, { username, pin });
+      set({ user: response.data.user, isAuthenticated: true });
       return { success: true };
     } catch (error) {
       const raw = error.response?.data?.error;
@@ -82,23 +76,20 @@ const useStore = create((set, get) => ({
   },
   
   logout: async () => {
-    const { sessionId } = get();
-    if (sessionId) {
-      await axios.post(`${API_URL}/auth/logout`, {}, {
-        headers: { 'X-Session-Id': sessionId },
-      });
-    }
-    localStorage.removeItem('sessionId');
-    set({ user: null, sessionId: null, isAuthenticated: false });
+    await api.post(`/auth/logout`, {});
+    set({
+      user: null,
+      isAuthenticated: false,
+      accessToken: null,
+      accessTokenExpiresAt: 0,
+    });
   },
   
   search: async (query, type) => {
-    const { sessionId } = get();
-    if (!sessionId) return [];
+    if (!get().isAuthenticated) return [];
     try {
-      const response = await axios.get(`${API_URL}/search`, {
+      const response = await api.get(`/search`, {
         params: { q: query, type },
-        headers: { 'X-Session-Id': sessionId },
       });
       return response.data;
     } catch (error) {
@@ -108,12 +99,10 @@ const useStore = create((set, get) => ({
   },
 
   searchBooks: async (query) => {
-    const { sessionId } = get();
-    if (!sessionId) return [];
+    if (!get().isAuthenticated) return [];
     try {
-      const response = await axios.get(`${API_URL}/search/books`, {
+      const response = await api.get(`/search/books`, {
         params: { q: query },
-        headers: { 'X-Session-Id': sessionId },
       });
       return response.data;
     } catch (error) {
@@ -123,12 +112,10 @@ const useStore = create((set, get) => ({
   },
 
   getVideoInfo: async (url) => {
-    const { sessionId } = get();
-    if (!sessionId) return null;
+    if (!get().isAuthenticated) return null;
     try {
-      const response = await axios.get(`${API_URL}/video-info`, {
+      const response = await api.get(`/video-info`, {
         params: { url },
-        headers: { 'X-Session-Id': sessionId },
       });
       return response.data;
     } catch (error) {
@@ -138,93 +125,100 @@ const useStore = create((set, get) => ({
   },
 
   markUploaded: async (id) => {
-    const { sessionId } = get();
-    const response = await axios.post(`${API_URL}/requests/${id}/mark-uploaded`, {}, {
-      headers: { 'X-Session-Id': sessionId },
-    });
+    const response = await api.post(`/requests/${id}/mark-uploaded`, {});
     return response.data;
   },
 
+  getUsers: async () => {
+    if (!get().isAuthenticated) return [];
+    const response = await api.get(`/users`);
+    return response.data;
+  },
+
+  createChild: async (data) => {
+    const response = await api.post(`/users`, data);
+    return response.data;
+  },
+
+  updateChild: async (id, data) => {
+    const response = await api.patch(`/users/${id}`, data);
+    return response.data;
+  },
+
+  setUserPin: async (id, pin) => {
+    await api.post(`/users/${id}/pin`, { pin });
+  },
+
+  deleteChild: async (id) => {
+    await api.delete(`/users/${id}`);
+  },
+
   getBlockedKeywords: async () => {
-    const { sessionId } = get();
-    if (!sessionId) return [];
-    const response = await axios.get(`${API_URL}/blocked-keywords`, {
-      headers: { 'X-Session-Id': sessionId },
-    });
+    if (!get().isAuthenticated) return [];
+    const response = await api.get(`/blocked-keywords`);
     return response.data;
   },
 
   addBlockedKeyword: async (keyword) => {
-    const { sessionId } = get();
-    await axios.post(`${API_URL}/blocked-keywords`, { keyword }, {
-      headers: { 'X-Session-Id': sessionId },
-    });
+    await api.post(`/blocked-keywords`, { keyword });
   },
 
   removeBlockedKeyword: async (id) => {
-    const { sessionId } = get();
-    await axios.delete(`${API_URL}/blocked-keywords/${id}`, {
-      headers: { 'X-Session-Id': sessionId },
-    });
+    await api.delete(`/blocked-keywords/${id}`);
   },
   
   createRequest: async (data) => {
-    const { sessionId } = get();
-    if (!sessionId) throw new Error('Not authenticated');
-    const response = await axios.post(`${API_URL}/requests`, data, {
-      headers: { 'X-Session-Id': sessionId },
-    });
+    if (!get().isAuthenticated) throw new Error('Not authenticated');
+    const response = await api.post(`/requests`, data);
     return response.data;
   },
   
-  getRequests: async () => {
-    const { sessionId } = get();
-    if (!sessionId) return [];
-    const response = await axios.get(`${API_URL}/requests`, {
-      headers: { 'X-Session-Id': sessionId },
+  // Short-lived token for URLs the browser fetches without our auth header
+  // (<audio src>, EventSource). Cached until shortly before it expires.
+  getAccessToken: async () => {
+    const { isAuthenticated, accessToken, accessTokenExpiresAt } = get();
+    if (!isAuthenticated) return null;
+    if (accessToken && Date.now() < accessTokenExpiresAt - 15000) {
+      return accessToken;
+    }
+    const response = await api.post(`/access-token`, {});
+    set({
+      accessToken: response.data.token,
+      accessTokenExpiresAt: Date.now() + response.data.expiresIn * 1000,
     });
+    return response.data.token;
+  },
+
+  getRequests: async () => {
+    if (!get().isAuthenticated) return [];
+    const response = await api.get(`/requests`);
     return response.data;
   },
   
   getPendingRequests: async () => {
-    const { sessionId } = get();
-    if (!sessionId) return [];
-    const response = await axios.get(`${API_URL}/requests/pending`, {
-      headers: { 'X-Session-Id': sessionId },
-    });
+    if (!get().isAuthenticated) return [];
+    const response = await api.get(`/requests/pending`);
     return response.data;
   },
   
   approveRequest: async (id) => {
-    const { sessionId } = get();
-    const response = await axios.post(`${API_URL}/requests/${id}/approve`, {}, {
-      headers: { 'X-Session-Id': sessionId },
-    });
+    const response = await api.post(`/requests/${id}/approve`, {});
     return response.data;
   },
   
   rejectRequest: async (id, reason = 'Not appropriate') => {
-    const { sessionId } = get();
-    const response = await axios.post(`${API_URL}/requests/${id}/reject`, { reason }, {
-      headers: { 'X-Session-Id': sessionId },
-    });
+    const response = await api.post(`/requests/${id}/reject`, { reason });
     return response.data;
   },
   
   deleteRequest: async (id) => {
-    const { sessionId } = get();
-    await axios.delete(`${API_URL}/requests/${id}`, {
-      headers: { 'X-Session-Id': sessionId },
-    });
+    await api.delete(`/requests/${id}`);
   },
   
   getRequestStatus: async (id) => {
-    const { sessionId } = get();
-    if (!sessionId) return null;
+    if (!get().isAuthenticated) return null;
     try {
-      const response = await axios.get(`${API_URL}/requests/${id}/status`, {
-        headers: { 'X-Session-Id': sessionId },
-      });
+      const response = await api.get(`/requests/${id}/status`);
       return response.data;
     } catch (error) {
       console.error('Status check error:', error);
@@ -233,37 +227,26 @@ const useStore = create((set, get) => ({
   },
   
   getAnalytics: async () => {
-    const { sessionId } = get();
-    if (!sessionId) return null;
-    const response = await axios.get(`${API_URL}/analytics`, {
-      headers: { 'X-Session-Id': sessionId },
-    });
+    if (!get().isAuthenticated) return null;
+    const response = await api.get(`/analytics`);
     return response.data;
   },
 
   retryDownload: async (id) => {
-    const { sessionId } = get();
-    const response = await axios.post(`${API_URL}/requests/${id}/retry`, { force: true }, {
-      headers: { 'X-Session-Id': sessionId },
-    });
+    const response = await api.post(`/requests/${id}/retry`, { force: true });
     return response.data;
   },
 
   retryAllDummy: async () => {
-    const { sessionId } = get();
-    const response = await axios.post(`${API_URL}/requests/retry-all-dummy`, {}, {
-      headers: { 'X-Session-Id': sessionId },
-    });
+    const response = await api.post(`/requests/retry-all-dummy`, {});
     return response.data;
   },
 
   checkDuplicate: async (title) => {
-    const { sessionId } = get();
-    if (!sessionId) return 0;
+    if (!get().isAuthenticated) return 0;
     try {
-      const response = await axios.get(`${API_URL}/requests/check-duplicate`, {
+      const response = await api.get(`/requests/check-duplicate`, {
         params: { title },
-        headers: { 'X-Session-Id': sessionId },
       });
       return response.data.count;
     } catch {
@@ -272,12 +255,10 @@ const useStore = create((set, get) => ({
   },
 
   getArtists: async (profile) => {
-    const { sessionId } = get();
-    if (!sessionId) return [];
+    if (!get().isAuthenticated) return [];
     try {
-      const response = await axios.get(`${API_URL}/library/artists`, {
+      const response = await api.get(`/library/artists`, {
         params: profile ? { profile } : {},
-        headers: { 'X-Session-Id': sessionId },
       });
       return response.data;
     } catch {

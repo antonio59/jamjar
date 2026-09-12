@@ -13,7 +13,6 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { downloadAndUpload } from './server/downloader.js';
-import { updateRequestStatus } from './server/database.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,7 +57,7 @@ requests.forEach(r => {
 });
 
 // Reset all to 'approved' so downloader can pick them up
-const reset = db.prepare(`UPDATE requests SET status = 'approved', error_message = NULL, internxt_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`);
+const reset = db.prepare(`UPDATE requests SET status = 'approved', error_message = NULL, file_path = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`);
 requests.forEach(r => reset.run(r.id));
 db.close();
 

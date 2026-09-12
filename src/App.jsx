@@ -7,6 +7,7 @@ import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import Analytics from "./pages/Analytics";
 import Tutorial from "./pages/Tutorial";
+import Settings from "./pages/Settings";
 import Navbar from "./components/Navbar";
 import Toast from "./components/Toast";
 
@@ -40,6 +41,10 @@ export default function App() {
             <Route
               path="/analytics"
               element={user.role === "parent" ? <Analytics /> : <Navigate to="/" />}
+            />
+            <Route
+              path="/settings"
+              element={user.role === "parent" ? <Settings /> : <Navigate to="/" />}
             />
             <Route path="/tutorial" element={<Tutorial />} />
             <Route path="*" element={<Navigate to="/" />} />

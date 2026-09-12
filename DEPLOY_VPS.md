@@ -75,18 +75,6 @@ Then restart:
 systemctl restart jamjar
 ```
 
-### Add Internxt Credentials (Optional)
-
-Edit `/opt/jamjar/.env`:
-
-```env
-INTERNXT_EMAIL=your@email.com
-INTERNXT_PASSWORD=your_password
-INTERNXT_APP_KEY=your_app_key
-```
-
-Then restart:
-
 ```bash
 systemctl restart jamjar
 ```

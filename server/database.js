@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { publishRequestChange } from './requestEvents.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -54,7 +55,7 @@ db.exec(`
     approved_at DATETIME,
     rejected_reason TEXT,
     downloaded_at DATETIME,
-    internxt_url TEXT,
+    file_path TEXT,
     error_message TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -102,6 +103,25 @@ const migrations = [
       } catch {} // Column may already exist on retry
     },
   },
+  {
+    version: 2,
+    up() {
+      // Files live on this server; the column never held an Internxt URL
+      try {
+        db.exec('ALTER TABLE requests RENAME COLUMN internxt_url TO file_path');
+      } catch {} // Fresh databases are already created with file_path
+    },
+  },
+  {
+    version: 3,
+    up() {
+      try {
+        db.exec(
+          'ALTER TABLE users ADD COLUMN credentials_changed_at INTEGER NOT NULL DEFAULT 0'
+        );
+      } catch {} // Column may already exist on retry
+    },
+  },
 ];
 
 const applied = new Set(
@@ -131,8 +151,53 @@ export function getUserByUsername(username) {
 }
 
 export function getUserById(id) {
-  const stmt = db.prepare('SELECT id, username, role, profile, display_name, avatar_emoji, created_at FROM users WHERE id = ?');
+  const stmt = db.prepare('SELECT id, username, role, profile, display_name, avatar_emoji, created_at, credentials_changed_at FROM users WHERE id = ?');
   return stmt.get(id);
+}
+
+export function listUsers() {
+  return db
+    .prepare(
+      `SELECT id, username, role, profile, display_name, avatar_emoji, created_at
+       FROM users ORDER BY role DESC, username`
+    )
+    .all();
+}
+
+// Bumping credentials_changed_at also invalidates access tokens issued before
+// the rotation, which outlive the sessions they were minted from.
+export function updateUserPin(id, pin) {
+  const stmt = db.prepare(
+    'UPDATE users SET pin = ?, credentials_changed_at = ? WHERE id = ?'
+  );
+  const info = stmt.run(bcrypt.hashSync(pin, 12), Date.now(), id);
+  if (info.changes === 0) return null;
+  deleteSessionsForUser(id);
+  return getUserById(id);
+}
+
+export function updateUser(id, { displayName, avatarEmoji }) {
+  const current = getUserById(id);
+  if (!current) return null;
+  db.prepare('UPDATE users SET display_name = ?, avatar_emoji = ? WHERE id = ?').run(
+    displayName ?? current.display_name,
+    avatarEmoji ?? current.avatar_emoji,
+    id
+  );
+  return getUserById(id);
+}
+
+export function deleteUser(id) {
+  deleteSessionsForUser(id);
+  return db.prepare('DELETE FROM users WHERE id = ?').run(id).changes > 0;
+}
+
+export function countRequestsByUser(id) {
+  return db.prepare('SELECT COUNT(*) AS n FROM requests WHERE user_id = ?').get(id).n;
+}
+
+export function deleteSessionsForUser(id) {
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
 }
 
 export async function verifyPin(username, pin) {
@@ -152,7 +217,9 @@ export function createRequest(userId, profile, title, url, type, searchQuery, th
      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
   );
   stmt.run(id, userId, profile, title, url, type, searchQuery, thumbnail, duration, artist);
-  return getRequestById(id);
+  const request = getRequestById(id);
+  publishRequestChange({ type: 'created', request });
+  return request;
 }
 
 export function getRequestById(id) {
@@ -212,10 +279,12 @@ export function getArtists(profile = null) {
 // Resets a completed/failed request back to approved so it can be re-downloaded
 export function resetRequestForRetry(requestId) {
   db.prepare(
-    `UPDATE requests SET status = 'approved', error_message = NULL, internxt_url = NULL,
+    `UPDATE requests SET status = 'approved', error_message = NULL, file_path = NULL,
      downloaded_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).run(requestId);
-  return getRequestById(requestId);
+  const request = getRequestById(requestId);
+  publishRequestChange({ type: 'updated', request });
+  return request;
 }
 
 export function approveRequest(requestId, approvedBy) {
@@ -223,7 +292,9 @@ export function approveRequest(requestId, approvedBy) {
     `UPDATE requests SET status = 'approved', approved_by = ?, approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   );
   stmt.run(approvedBy, requestId);
-  return getRequestById(requestId);
+  const request = getRequestById(requestId);
+  publishRequestChange({ type: 'updated', request });
+  return request;
 }
 
 export function rejectRequest(requestId, reason) {
@@ -231,22 +302,28 @@ export function rejectRequest(requestId, reason) {
     `UPDATE requests SET status = 'rejected', rejected_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   );
   stmt.run(reason, requestId);
-  return getRequestById(requestId);
+  const request = getRequestById(requestId);
+  publishRequestChange({ type: 'updated', request });
+  return request;
 }
 
-export function updateRequestStatus(requestId, status, errorMessage = null, internxtUrl = null) {
+export function updateRequestStatus(requestId, status, errorMessage = null, filePath = null) {
   const stmt = db.prepare(
-    `UPDATE requests SET status = ?, error_message = ?, internxt_url = ?, 
+    `UPDATE requests SET status = ?, error_message = ?, file_path = ?, 
      downloaded_at = CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP ELSE downloaded_at END,
      updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   );
-  stmt.run(status, errorMessage, internxtUrl, status, requestId);
-  return getRequestById(requestId);
+  stmt.run(status, errorMessage, filePath, status, requestId);
+  const request = getRequestById(requestId);
+  publishRequestChange({ type: 'updated', request });
+  return request;
 }
 
 export function deleteRequest(requestId) {
+  const request = getRequestById(requestId);
   const stmt = db.prepare('DELETE FROM requests WHERE id = ?');
   stmt.run(requestId);
+  publishRequestChange({ type: 'deleted', request });
 }
 
 // Generic / placeholder titles that pollute analytics — excluded from

@@ -1,0 +1,78 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+import rateLimit from 'express-rate-limit';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import apiRoutes from './routes/api.js';
+import healthRoutes from './routes/health.js';
+import { requestLogger } from './logger.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+
+// Trust the Nginx reverse proxy sitting in front of us (fixes ERR_ERL_UNEXPECTED_X_FORWARDED_FOR)
+app.set('trust proxy', 1);
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://jamjar.antoniosmith.xyz';
+
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https://img.youtube.com', 'https://i.ytimg.com', 'https://covers.openlibrary.org'],
+      mediaSrc: ["'self'", 'blob:'],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+}));
+
+// CORS — only allow the production origin
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' ? ALLOWED_ORIGIN : true,
+  methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'X-Session-Id', 'X-CSRF-Token'],
+  credentials: true,
+}));
+
+// Health checks run ahead of the rate limiter so monitoring never gets 429s
+app.use('/api', healthRoutes);
+
+// Global rate limit — 300 requests per 15 min per IP
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests' },
+}));
+
+app.use(cookieParser());
+app.use(express.json({ limit: '100kb' }));
+app.use(requestLogger);
+
+// Serve static files from dist
+app.use(express.static(path.join(__dirname, '../dist')));
+
+// API routes
+app.use('/api', apiRoutes);
+
+// Serve frontend for all other routes (Express 5 compatible)
+app.get('/{*path}', (req, res) => {
+  const indexPath = path.join(__dirname, '../dist/index.html');
+  res.sendFile(indexPath, (err) => {
+    if (err) res.status(500).send('Server error');
+  });
+});
+
+export default app;

@@ -61,7 +61,6 @@ export default function RequestRow({
   request,
   downloadCount = 0,
   userRole,
-  sessionId,
   selectable = false,
   selected = false,
   onToggleSelect,
@@ -174,8 +173,8 @@ export default function RequestRow({
           )}
 
           {/* Audio preview — only when ready and has playable URL */}
-          {request.status === "completed" && request.internxt_url && (
-            <MiniPlayer request={request} sessionId={sessionId} className="mt-3" />
+          {request.status === "completed" && request.file_path && (
+            <MiniPlayer request={request} className="mt-3" />
           )}
 
           {/* Action groups — grouped by intent, never mixed */}
@@ -274,7 +273,7 @@ function RowActions({
   }
 
   // Library — download is primary on ready music; re-download is recovery
-  if (request.status === "completed" && request.internxt_url) {
+  if (request.status === "completed" && request.file_path) {
     lanes.push(
       <div key="library" className="flex items-center gap-2">
         <DownloadAction request={request} />
@@ -331,7 +330,7 @@ function LifecycleAction({ request, onDelete }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const isActive = ACTIVE_STATUSES.has(request.status);
-  const hasFile = request.status === "completed" && !!request.internxt_url;
+  const hasFile = request.status === "completed" && !!request.file_path;
   const needsConfirm = hasFile; // only confirm when we'd lose a real file
 
   const verb = isActive ? "Cancel" : hasFile ? "Delete" : "Remove";
@@ -393,25 +392,20 @@ function LifecycleAction({ request, onDelete }) {
   );
 }
 
-/* ─── Mini Player — authenticated blob streaming ─────────────────────────── */
-function MiniPlayer({ request, sessionId, className = "" }) {
+/* ─── Mini Player — signed-URL streaming with range support ──────────────── */
+function MiniPlayer({ request, className = "" }) {
+  const getAccessToken = useStore((s) => s.getAccessToken);
   const [state, setState] = useState("idle"); // idle | loading | playing | paused | error
   const [error, setError] = useState(null);
   const audioRef = useRef(null);
-  const blobUrlRef = useRef(null);
+  const loadedRef = useRef(false);
 
-  const streamUrl = request.internxt_url?.replace("/api/downloads/", "/api/stream/");
-
-  useEffect(() => {
-    return () => {
-      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
-    };
-  }, []);
+  const streamUrl = request.file_path?.replace("/api/downloads/", "/api/stream/");
 
   const handleToggle = async () => {
     if (state === "loading") return;
 
-    if (audioRef.current && blobUrlRef.current) {
+    if (audioRef.current && loadedRef.current) {
       if (audioRef.current.paused) {
         await audioRef.current.play().catch(() => {});
         setState("playing");
@@ -425,22 +419,17 @@ function MiniPlayer({ request, sessionId, className = "" }) {
     setState("loading");
     setError(null);
     try {
-      const res = await fetch(streamUrl, { headers: { "X-Session-Id": sessionId } });
-      if (!res.ok) {
-        if (res.status === 401 || res.status === 403)
-          throw new Error("Session expired — log in again");
-        throw new Error(`Couldn't load preview (${res.status})`);
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      blobUrlRef.current = url;
+      const token = await getAccessToken();
+      if (!token) throw new Error("Session expired — log in again");
       if (audioRef.current) {
-        audioRef.current.src = url;
+        audioRef.current.src = `${streamUrl}?token=${encodeURIComponent(token)}`;
         audioRef.current.load();
+        loadedRef.current = true;
         await audioRef.current.play().catch(() => {});
       }
       setState("playing");
     } catch (e) {
+      loadedRef.current = false;
       setError(e.message || "Preview unavailable");
       setState("error");
     }
@@ -462,6 +451,13 @@ function MiniPlayer({ request, sessionId, className = "" }) {
       <audio
         ref={audioRef}
         controls
+        preload="none"
+        onError={() => {
+          if (!loadedRef.current) return;
+          loadedRef.current = false;
+          setError("Preview unavailable");
+          setState("error");
+        }}
         onEnded={() => setState("paused")}
         onPause={() => state === "playing" && setState("paused")}
         onPlay={() => setState("playing")}
@@ -479,6 +475,7 @@ function MiniPlayer({ request, sessionId, className = "" }) {
 
 /* ─── Download Action — open rename dialog, then fetch + save with chosen name ─── */
 function sanitizeFilename(name) {
+  // eslint-disable-next-line no-control-regex -- control chars are illegal in filenames
   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "").trim().slice(0, 100);
 }
 
@@ -502,10 +499,7 @@ function DownloadAction({ request }) {
     setDownloading(true);
     setError(null);
     try {
-      const { sessionId } = useStore.getState();
-      const res = await fetch(request.internxt_url, {
-        headers: { "X-Session-Id": sessionId },
-      });
+      const res = await fetch(request.file_path, { credentials: "include" });
       if (!res.ok) throw new Error("Download failed");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);

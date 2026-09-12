@@ -5,7 +5,6 @@ import RequestRow from "./RequestRow";
 export default function NeedsUploadView({
   audiobooks,
   userRole,
-  sessionId,
   onMarkUploaded,
   onDelete,
   onShowUploadGuide,
@@ -43,7 +42,6 @@ export default function NeedsUploadView({
             key={r.id}
             request={r}
             userRole={userRole}
-            sessionId={sessionId}
             onMarkUploaded={onMarkUploaded}
             onDelete={onDelete}
             onShowUploadGuide={onShowUploadGuide}

@@ -1,13 +1,9 @@
-import YtDlpModule from "yt-dlp-wrap";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { updateRequestStatus } from "./database.js";
-
-// Node.js ESM/CJS interop: yt-dlp-wrap ships CJS with exports.default = YTDlpWrap
-// so the default import is the module namespace object, not the class directly
-const YtDlp = YtDlpModule.default ?? YtDlpModule;
-const YTDLP_BIN = process.env.YTDLP_PATH || "/usr/local/bin/yt-dlp";
+import { createYtDlp, baseArgs, YTDLP_BIN } from "./ytdlp.js";
+import logger from "./logger.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,7 +20,7 @@ if (!fs.existsSync(ipodDir)) fs.mkdirSync(ipodDir, { recursive: true });
 export async function downloadAndUpload(request) {
   try {
     updateRequestStatus(request.id, "downloading");
-    console.log(`Starting download: ${request.title}`);
+    logger.info("download started", { requestId: request.id, title: request.title });
 
     const outputDir = request.profile === "yoto" ? yotoDir : ipodDir;
     const sanitizedName = request.title
@@ -34,10 +30,7 @@ export async function downloadAndUpload(request) {
 
     const isYoto = request.profile === "yoto";
 
-    const ytDlp = new YtDlp(YTDLP_BIN);
-
-        const nodebin = process.execPath; // use the same node binary running this server
-    const cookiesFile = process.env.YTDLP_COOKIES_FILE;
+    const ytDlp = createYtDlp();
 
     // Build CLI args array — yt-dlp-wrap.exec() takes string[], not an options object
     const args = [
@@ -49,13 +42,8 @@ export async function downloadAndUpload(request) {
       "-o", outputFile,
       "--no-playlist",
       "--restrict-filenames",
-      // Use Node.js for PO-token generation so YouTube doesn't block as bot
-      "--js-runtimes", `node:${nodebin}`,
+      ...baseArgs(),
     ];
-
-    if (cookiesFile && fs.existsSync(cookiesFile)) {
-      args.push("--cookies", cookiesFile);
-    }
 
     if (isYoto) {
       // CBR 128kbps, 44.1kHz stereo, clean ID3v2.3 tags — Yoto player compatibility
@@ -64,7 +52,7 @@ export async function downloadAndUpload(request) {
       args.push("--embed-thumbnail");
     }
 
-    console.log(`Downloading with yt-dlp [${YTDLP_BIN}]: ${request.url}`);
+    logger.info("yt-dlp invoked", { bin: YTDLP_BIN, url: request.url });
     await ytDlp.execPromise(args);
 
     // Find the output file — yt-dlp uses the sanitized name as the base
@@ -86,9 +74,17 @@ export async function downloadAndUpload(request) {
 
     const downloadUrl = `/api/downloads/${request.profile}/${downloadedFile}`;
     updateRequestStatus(request.id, "completed", null, downloadUrl);
-    console.log(`Download complete: ${request.title} (${Math.round(stat.size / 1024)}KB)`);
+    logger.info("download complete", {
+      requestId: request.id,
+      title: request.title,
+      kilobytes: Math.round(stat.size / 1024),
+    });
   } catch (error) {
-    console.error(`Download failed for ${request.title}:`, error.message);
+    logger.error("download failed", {
+      requestId: request.id,
+      title: request.title,
+      error: error.message,
+    });
     updateRequestStatus(request.id, "failed", error.message);
   }
 }

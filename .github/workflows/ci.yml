@@ -27,5 +27,11 @@ jobs:
       - name: Build frontend
         run: pnpm run build
 
+      - name: Lint JS/JSX
+        run: pnpm run lint
+
       - name: Lint CSS
         run: pnpm run lint:css
+
+      - name: Run tests
+        run: pnpm test

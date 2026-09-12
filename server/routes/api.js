@@ -23,20 +23,32 @@ import {
   getDownloadCountByTitle,
   getArtists,
   resetRequestForRetry,
+  createUser,
+  getUserByUsername,
+  getUserById,
+  listUsers,
+  updateUser,
+  updateUserPin,
+  deleteUser,
+  countRequestsByUser,
   createSession,
   getSession,
   deleteSession,
   purgeExpiredSessions,
 } from "../database.js";
 import { searchYouTube } from "../youtube.js";
-import { downloadAndUpload } from "../downloader.js";
+import { isExplicitTitle } from "../cleanFilter.js";
+import { enqueueDownload, queueStatus } from "../downloadQueue.js";
+import logger from "../logger.js";
+import { signAccessToken, verifyAccessToken, accessTokenTtl } from "../accessToken.js";
+import { requestEvents } from "../requestEvents.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DOWNLOAD_DIR =
   process.env.DOWNLOAD_DIR || path.join(__dirname, "../../downloads");
 
-const TITLE_NOISE = /[\[(][\s\w]*(official\s*(lyric|music|audio|hd|4k)?(\s*video)?|lyric[s]?|audio|hd|4k|explicit|remaster(ed)?|visuali[sz]er|performance\s*video|topic)[\s\w]*[\])]/gi;
+const TITLE_NOISE = /[[(][\s\w]*(official\s*(lyric|music|audio|hd|4k)?(\s*video)?|lyric[s]?|audio|hd|4k|explicit|remaster(ed)?|visuali[sz]er|performance\s*video|topic)[\s\w]*[\])]/gi;
 
 // Generic / placeholder titles that should be flagged and improved, not stored
 // silently — the request UI now requires an editable title, so these only
@@ -68,7 +80,7 @@ const router = express.Router();
 
 // Purge expired sessions on startup and every 6 hours
 purgeExpiredSessions();
-setInterval(purgeExpiredSessions, 6 * 60 * 60 * 1000);
+setInterval(purgeExpiredSessions, 6 * 60 * 60 * 1000).unref();
 
 // Allowed external hostnames for video info and downloading
 const ALLOWED_VIDEO_HOSTS = new Set([
@@ -93,13 +105,67 @@ function hashSessionId(id) {
   return createHash("sha256").update(id).digest("hex");
 }
 
+const SESSION_COOKIE = "jj_session";
+const CSRF_COOKIE = "jj_csrf";
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+function cookieOptions(httpOnly) {
+  return {
+    httpOnly,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: SESSION_MAX_AGE_MS,
+  };
+}
+
+function issueSessionCookies(res, rawSessionId) {
+  res.cookie(SESSION_COOKIE, rawSessionId, cookieOptions(true));
+  res.cookie(CSRF_COOKIE, randomBytes(24).toString("hex"), cookieOptions(false));
+}
+
+function clearSessionCookies(res) {
+  res.clearCookie(SESSION_COOKIE, { path: "/" });
+  res.clearCookie(CSRF_COOKIE, { path: "/" });
+}
+
+// Cookie-authenticated writes are the only ones a cross-site page can trigger,
+// so they carry a double-submit CSRF token. The X-Session-Id header path
+// (scripts, non-browser clients) cannot be forged cross-site at all.
+function csrfTokenMatches(req) {
+  const sent = req.headers["x-csrf-token"];
+  const expected = req.cookies?.[CSRF_COOKIE];
+  return Boolean(sent && expected && sent === expected);
+}
+
 function authenticateSession(req, res, next) {
-  const rawId = req.headers["x-session-id"];
+  const headerId = req.headers["x-session-id"];
+  const cookieId = req.cookies?.[SESSION_COOKIE];
+  const rawId = headerId || cookieId;
   if (!rawId) return res.status(401).json({ error: "Not authenticated" });
   const session = getSession(hashSessionId(rawId));
-  if (!session) return res.status(401).json({ error: "Not authenticated" });
+  if (!session) {
+    if (!headerId) clearSessionCookies(res);
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  if (!headerId && !SAFE_METHODS.has(req.method) && !csrfTokenMatches(req)) {
+    return res.status(403).json({ error: "Invalid CSRF token" });
+  }
   req.user = session;
   next();
+}
+
+// Session header first, falling back to a signed ?token= for the browser APIs
+// that can't send headers (<audio src>, EventSource).
+function resolveUser(req) {
+  const rawId = req.headers["x-session-id"] || req.cookies?.[SESSION_COOKIE];
+  if (rawId) return getSession(hashSessionId(rawId)) || null;
+  const payload = verifyAccessToken(req.query.token);
+  if (!payload) return null;
+  const user = getUserById(payload.id);
+  if (!user || payload.iat * 1000 < user.credentials_changed_at) return null;
+  return { id: user.id, role: user.role, profile: user.profile };
 }
 
 function requireParent(req, res, next) {
@@ -134,6 +200,7 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
 
     const rawSessionId = randomBytes(32).toString("hex");
     createSession(hashSessionId(rawSessionId), user.id);
+    issueSessionCookies(res, rawSessionId);
 
     res.json({
       user: {
@@ -144,7 +211,6 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
         display_name: user.display_name,
         avatar_emoji: user.avatar_emoji,
       },
-      sessionId: rawSessionId,
     });
   } catch {
     res.status(500).json({ error: "Login failed" });
@@ -152,8 +218,13 @@ router.post("/auth/login", loginLimiter, async (req, res) => {
 });
 
 router.post("/auth/logout", (req, res) => {
-  const rawId = req.headers["x-session-id"];
+  const headerId = req.headers["x-session-id"];
+  if (!headerId && !csrfTokenMatches(req)) {
+    return res.status(403).json({ error: "Invalid CSRF token" });
+  }
+  const rawId = headerId || req.cookies?.[SESSION_COOKIE];
   if (rawId) deleteSession(hashSessionId(rawId));
+  clearSessionCookies(res);
   res.json({ success: true });
 });
 
@@ -175,7 +246,10 @@ router.get("/search", authenticateSession, async (req, res) => {
     if (!q || q.length < 2) {
       return res.json([]);
     }
-    const results = await searchYouTube(q, type || "music");
+    // Only a parent can deliberately look past the clean-version filter
+    const allowExplicit =
+      req.user.role === "parent" && req.query.allowExplicit === "true";
+    const results = await searchYouTube(q, type || "music", { allowExplicit });
     res.json(results);
   } catch {
     res.status(500).json({ error: "Search failed" });
@@ -294,6 +368,15 @@ router.post("/requests", authenticateSession, (req, res) => {
       });
     }
 
+    // Explicit cuts never enter the library unless a parent opts in explicitly
+    const allowExplicit = req.user.role === "parent" && req.body.allowExplicit === true;
+    if (!allowExplicit && isExplicitTitle(title)) {
+      return res.status(400).json({
+        error: "Explicit version blocked",
+        explicit: true,
+      });
+    }
+
     let request = createRequest(
       req.user.id,
       profile,
@@ -310,7 +393,7 @@ router.post("/requests", authenticateSession, (req, res) => {
     if (direct && req.user.role === "parent") {
       request = approveRequest(request.id, req.user.id);
       if (type !== "audiobook") {
-        downloadAndUpload(request).catch(console.error);
+        enqueueDownload(request);
       }
     }
 
@@ -353,7 +436,7 @@ router.post(
     try {
       const request = approveRequest(req.params.id, req.user.id);
       if (request.type !== "audiobook") {
-        downloadAndUpload(request).catch(console.error);
+        enqueueDownload(request);
       }
       res.json(request);
     } catch {
@@ -413,16 +496,16 @@ router.delete(
           .json({ error: "You can only cancel your own requests" });
       }
 
-      if (existing.internxt_url) {
+      if (existing.file_path) {
         const filePath = path.join(
           DOWNLOAD_DIR,
-          existing.internxt_url.replace("/api/downloads/", ""),
+          existing.file_path.replace("/api/downloads/", ""),
         );
         if (fs.existsSync(filePath)) {
           try {
             fs.unlinkSync(filePath);
           } catch (err) {
-            console.error("Failed to delete file on request delete:", err.message);
+            logger.error("failed to delete file on request delete", { error: err.message });
           }
         }
       }
@@ -449,10 +532,10 @@ router.post(
       }
 
       // Delete old dummy/corrupt file if it exists on disk
-      if (existing.internxt_url) {
+      if (existing.file_path) {
         const filePath = path.join(
           DOWNLOAD_DIR,
-          existing.internxt_url.replace("/api/downloads/", "")
+          existing.file_path.replace("/api/downloads/", "")
         );
         if (fs.existsSync(filePath)) {
           const stat = fs.statSync(filePath);
@@ -464,7 +547,7 @@ router.post(
       }
 
       const request = resetRequestForRetry(req.params.id);
-      downloadAndUpload(request).catch(console.error);
+      enqueueDownload(request);
       res.json(request);
     } catch (err) {
       res.status(500).json({ error: "Failed to retry download" });
@@ -482,8 +565,8 @@ router.post(
       const all = getAllRequests();
       const toRetry = all.filter((r) => {
         if (r.type === "audiobook" || r.status !== "completed") return false;
-        if (!r.internxt_url) return false;
-        const filePath = path.join(DOWNLOAD_DIR, r.internxt_url.replace("/api/downloads/", ""));
+        if (!r.file_path) return false;
+        const filePath = path.join(DOWNLOAD_DIR, r.file_path.replace("/api/downloads/", ""));
         if (!fs.existsSync(filePath)) return true;
         const stat = fs.statSync(filePath);
         return stat.size < 1024; // dummy file
@@ -491,15 +574,19 @@ router.post(
 
       toRetry.forEach((r) => {
         // Remove dummy file
-        if (r.internxt_url) {
-          const filePath = path.join(DOWNLOAD_DIR, r.internxt_url.replace("/api/downloads/", ""));
+        if (r.file_path) {
+          const filePath = path.join(DOWNLOAD_DIR, r.file_path.replace("/api/downloads/", ""));
           if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         }
         const updated = resetRequestForRetry(r.id);
-        downloadAndUpload(updated).catch(console.error);
+        enqueueDownload(updated);
       });
 
-      res.json({ queued: toRetry.length, titles: toRetry.map((r) => r.title) });
+      res.json({
+        queued: toRetry.length,
+        titles: toRetry.map((r) => r.title),
+        queue: queueStatus(),
+      });
     } catch (err) {
       res.status(500).json({ error: "Failed to retry downloads" });
     }
@@ -583,11 +670,158 @@ router.delete(
   },
 );
 
-// Audio stream — header auth, range request support
+// Child account management (parent only)
+const PIN_PATTERN = /^\d{4}$/;
+const USERNAME_PATTERN = /^[a-z0-9_-]{2,20}$/;
+const MAX_DISPLAY_NAME = 40;
+const MAX_AVATAR = 8;
+
+function readProfileFields({ displayName, avatarEmoji }) {
+  const name = typeof displayName === "string" ? displayName.trim() : null;
+  const emoji = typeof avatarEmoji === "string" ? avatarEmoji.trim() : null;
+  if (name && [...name].length > MAX_DISPLAY_NAME) {
+    return { error: `Display name must be ${MAX_DISPLAY_NAME} characters or fewer` };
+  }
+  if (emoji && [...emoji].length > MAX_AVATAR) {
+    return { error: "Avatar must be a single emoji" };
+  }
+  return { displayName: name || null, avatarEmoji: emoji || null };
+}
+
+router.get("/users", authenticateSession, requireParent, (req, res) => {
+  try {
+    res.json(
+      listUsers().map((u) => ({ ...u, request_count: countRequestsByUser(u.id) })),
+    );
+  } catch {
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+router.post("/users", authenticateSession, requireParent, (req, res) => {
+  try {
+    const { username, pin, profile, displayName, avatarEmoji } = req.body || {};
+    const name = typeof username === "string" ? username.trim().toLowerCase() : "";
+    if (!USERNAME_PATTERN.test(name)) {
+      return res.status(400).json({
+        error: "Username must be 2-20 characters: letters, numbers, - or _",
+      });
+    }
+    if (!PIN_PATTERN.test(pin || "")) {
+      return res.status(400).json({ error: "PIN must be exactly 4 digits" });
+    }
+    if (profile !== "yoto" && profile !== "ipod") {
+      return res.status(400).json({ error: "Profile must be yoto or ipod" });
+    }
+    if (getUserByUsername(name)) {
+      return res.status(409).json({ error: "That username is taken" });
+    }
+    const fields = readProfileFields({ displayName, avatarEmoji });
+    if (fields.error) return res.status(400).json({ error: fields.error });
+    const user = createUser(
+      name,
+      pin,
+      "child",
+      profile,
+      fields.displayName || name,
+      fields.avatarEmoji || "🎵",
+    );
+    logger.info("child account created", { by: req.user.id, userId: user.id });
+    res.status(201).json(user);
+  } catch {
+    res.status(500).json({ error: "Failed to create user" });
+  }
+});
+
+router.patch("/users/:id", authenticateSession, requireParent, (req, res) => {
+  try {
+    const fields = readProfileFields(req.body || {});
+    if (fields.error) return res.status(400).json({ error: fields.error });
+    const updated = updateUser(req.params.id, fields);
+    if (!updated) return res.status(404).json({ error: "User not found" });
+    res.json(updated);
+  } catch {
+    res.status(500).json({ error: "Failed to update user" });
+  }
+});
+
+// Rotating a PIN signs that account out everywhere
+router.post("/users/:id/pin", authenticateSession, requireParent, (req, res) => {
+  try {
+    const { pin } = req.body || {};
+    if (!PIN_PATTERN.test(pin || "")) {
+      return res.status(400).json({ error: "PIN must be exactly 4 digits" });
+    }
+    const updated = updateUserPin(req.params.id, pin);
+    if (!updated) return res.status(404).json({ error: "User not found" });
+    logger.info("pin rotated", { by: req.user.id, userId: req.params.id });
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ error: "Failed to update PIN" });
+  }
+});
+
+router.delete("/users/:id", authenticateSession, requireParent, (req, res) => {
+  try {
+    const target = getUserById(req.params.id);
+    if (!target) return res.status(404).json({ error: "User not found" });
+    if (target.role === "parent") {
+      return res.status(400).json({ error: "Parent accounts can't be deleted here" });
+    }
+    if (countRequestsByUser(target.id) > 0) {
+      return res.status(409).json({
+        error: "This child still has requests — delete those first",
+      });
+    }
+    deleteUser(target.id);
+    logger.info("child account deleted", { by: req.user.id, userId: target.id });
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ error: "Failed to delete user" });
+  }
+});
+
+// Short-lived token for <audio src> and EventSource, which can't send headers
+router.post("/access-token", authenticateSession, (req, res) => {
+  res.json({
+    token: signAccessToken(req.user),
+    expiresIn: accessTokenTtl,
+  });
+});
+
+// Server-sent request updates, replacing dashboard polling. EventSource can't
+// set headers, so it authenticates with ?token= from /access-token.
+router.get("/events", (req, res) => {
+  const user = resolveUser(req);
+  if (!user) return res.status(401).json({ error: "Not authenticated" });
+
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.write("retry: 5000\n\n");
+
+  const onChange = (change) => {
+    // Children only hear about their own profile
+    if (user.role !== "parent" && change.request?.profile !== user.profile) return;
+    res.write(`event: request\ndata: ${JSON.stringify(change)}\n\n`);
+  };
+  requestEvents.on("change", onChange);
+
+  // Comment frames keep proxies from closing an idle stream
+  const keepAlive = setInterval(() => res.write(": ping\n\n"), 25000);
+
+  req.on("close", () => {
+    clearInterval(keepAlive);
+    requestEvents.off("change", onChange);
+  });
+});
+
+// Audio stream — session header or signed token, range request support
 router.get("/stream/:profile/:filename", (req, res) => {
-  const rawId = req.headers["x-session-id"];
-  if (!rawId) return res.status(401).json({ error: "Not authenticated" });
-  const session = getSession(hashSessionId(rawId));
+  const session = resolveUser(req);
   if (!session) return res.status(401).json({ error: "Not authenticated" });
 
   const { profile, filename } = req.params;
@@ -701,7 +935,7 @@ router.get("/requests/:id/status", authenticateSession, (req, res) => {
 
     res.json({
       status: request.status,
-      download_url: request.internxt_url,
+      download_url: request.file_path,
       error_message: request.error_message,
     });
   } catch {

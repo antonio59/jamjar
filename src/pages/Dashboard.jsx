@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Clock,
   CheckCircle,
@@ -17,14 +17,17 @@ import NeedsUploadView from "../components/dashboard/NeedsUploadView";
 import MaintenanceView from "../components/dashboard/MaintenanceView";
 import AudiobookUploadGuide from "../components/dashboard/AudiobookUploadGuide";
 
+const API_URL = import.meta.env.VITE_API_URL || "/api";
+// Only used when the event stream can't be opened (proxy strips SSE, etc.)
 const POLL_INTERVAL = 12000;
+const MAX_SSE_ATTEMPTS = 3;
 
 export default function Dashboard() {
   const {
     user,
-    sessionId,
     getPendingRequests,
     getRequests,
+    getAccessToken,
     approveRequest,
     rejectRequest,
     deleteRequest,
@@ -37,7 +40,6 @@ export default function Dashboard() {
   const [pending, setPending] = useState([]);
   const [allRequests, setAllRequests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const pollRef = useRef(null);
   const [activeTab, setActiveTab] = useState(
     user.role === "parent" ? "triage" : "library",
   );
@@ -61,35 +63,63 @@ export default function Dashboard() {
     loadData();
   }, [loadData]);
 
-  // Poll while there's in-flight work
+  // Live updates over SSE; fall back to polling if the stream won't stay up
   useEffect(() => {
-    const inFlight = allRequests.filter(
-      (r) =>
-        r.status === "downloading" ||
-        (r.status === "approved" && r.type === "music"),
-    );
-    if (inFlight.length === 0) {
-      clearInterval(pollRef.current);
-      return;
-    }
-    pollRef.current = setInterval(async () => {
-      const fresh = await getRequests();
-      if (!fresh?.length) return;
-      const prevById = Object.fromEntries(allRequests.map((r) => [r.id, r]));
-      let changed = false;
-      fresh.forEach((r) => {
-        if (prevById[r.id]?.status !== r.status) changed = true;
-      });
-      if (changed) {
-        const ready = fresh.find(
-          (r) => r.status === "completed" && prevById[r.id]?.status !== "completed",
-        );
-        if (ready) showToast(`"${ready.title}" is ready!`, "success");
-        setAllRequests(fresh);
+    let source = null;
+    let pollId = null;
+    let retryId = null;
+    let cancelled = false;
+    let attempts = 0;
+
+    const startPolling = () => {
+      if (pollId || cancelled) return;
+      pollId = setInterval(loadData, POLL_INTERVAL);
+    };
+
+    const connect = async () => {
+      if (cancelled) return;
+      let token;
+      try {
+        token = await getAccessToken();
+      } catch {
+        token = null;
       }
-    }, POLL_INTERVAL);
-    return () => clearInterval(pollRef.current);
-  }, [allRequests, getRequests, showToast]);
+      if (cancelled) return;
+      if (!token) return startPolling();
+
+      source = new EventSource(
+        `${API_URL}/events?token=${encodeURIComponent(token)}`,
+      );
+
+      source.addEventListener("request", (event) => {
+        attempts = 0;
+        const { type, request } = JSON.parse(event.data);
+        if (type === "updated" && request?.status === "completed") {
+          showToast(`"${request.title}" is ready!`, "success");
+        }
+        loadData();
+      });
+
+      // The browser retries by itself, but with the now-expired token in the
+      // URL — reconnect with a fresh one instead.
+      source.onerror = () => {
+        source.close();
+        source = null;
+        if (cancelled) return;
+        if (++attempts >= MAX_SSE_ATTEMPTS) return startPolling();
+        retryId = setTimeout(connect, 2000 * attempts);
+      };
+    };
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      source?.close();
+      clearInterval(pollId);
+      clearTimeout(retryId);
+    };
+  }, [loadData, getAccessToken, showToast]);
 
   // ── Derived state ─────────────────────────────────────────────────────────
   const needsUpload = useMemo(
@@ -300,7 +330,6 @@ export default function Dashboard() {
               <TriageView
                 pending={pending}
                 userRole={user.role}
-                sessionId={sessionId}
                 onApprove={handleApprove}
                 onReject={handleReject}
                 onDelete={handleDelete}
@@ -311,7 +340,6 @@ export default function Dashboard() {
               <LibraryView
                 requests={allRequests}
                 userRole={user.role}
-                sessionId={sessionId}
                 onDelete={handleDelete}
                 onRetry={handleRetry}
                 onShowUploadGuide={(req) => setUploadGuideRequest(req)}
@@ -321,7 +349,6 @@ export default function Dashboard() {
               <NeedsUploadView
                 audiobooks={needsUpload}
                 userRole={user.role}
-                sessionId={sessionId}
                 onMarkUploaded={handleMarkUploaded}
                 onDelete={handleDelete}
                 onShowUploadGuide={(req) => setUploadGuideRequest(req)}
@@ -331,7 +358,6 @@ export default function Dashboard() {
               <MaintenanceView
                 brokenRequests={broken}
                 userRole={user.role}
-                sessionId={sessionId}
                 onRetry={handleRetry}
                 onDelete={handleDelete}
                 onRetryAll={handleRetryAll}
@@ -343,7 +369,6 @@ export default function Dashboard() {
         <LibraryView
           requests={allRequests}
           userRole={user.role}
-          sessionId={sessionId}
           onDelete={handleDelete}
           onRetry={handleRetry}
         />

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   motion,
   AnimatePresence,
@@ -39,6 +39,8 @@ export default function QuickApproveDrawer({
   const controls = useAnimation();
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-250, 250], [-8, 8]);
+  const approveStampOpacity = useTransform(x, [20, 120], [0, 1]);
+  const rejectStampOpacity = useTransform(x, [-120, -20], [1, 0]);
 
   const current = requests[0];
 
@@ -162,13 +164,13 @@ export default function QuickApproveDrawer({
           >
             {/* Decision stamps */}
             <motion.div
-              style={{ opacity: useTransform(x, [20, 120], [0, 1]) }}
+              style={{ opacity: approveStampOpacity }}
               className="absolute top-3 right-3 bg-[var(--success-solid)] text-white text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full pointer-events-none"
             >
               Approve
             </motion.div>
             <motion.div
-              style={{ opacity: useTransform(x, [-120, -20], [1, 0]) }}
+              style={{ opacity: rejectStampOpacity }}
               className="absolute top-3 left-3 bg-[var(--danger-solid)] text-white text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full pointer-events-none"
             >
               Reject
