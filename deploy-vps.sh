@@ -1,10 +1,10 @@
 #!/bin/bash
 set -e
 
-# JamJar v2.2.0 - Hostinger VPS Deployment Script
+# JamJar - Hostinger VPS Deployment Script
 # Usage: sudo bash deploy-vps.sh
 
-echo "🫙 JamJar v2.2.0 - VPS Deployment"
+echo "🫙 JamJar - VPS Deployment"
 echo "========================================="
 
 # Configuration
@@ -61,21 +61,20 @@ echo -e "${YELLOW}Step 5: Creating environment file...${NC}"
 if [ ! -f ".env" ]; then
     cat > .env << EOF
 PORT=$PORT
-JWT_SECRET=$(openssl rand -hex 32)
 NODE_ENV=production
 DB_PATH=$APP_DIR/data/jamjar.db
 DOWNLOAD_DIR=$APP_DIR/downloads
+ACCESS_TOKEN_SECRET=$(openssl rand -hex 32)
 YOUTUBE_API_KEY=
-SENTRY_DSN=
-VITE_SENTRY_DSN=
+# Seed accounts — change these, they are the first-run PINs
+PARENT_PIN=$(tr -dc '0-9' < /dev/urandom | head -c 6)
+CRISTINA_PIN=$(tr -dc '0-9' < /dev/urandom | head -c 6)
+ISABELLA_PIN=$(tr -dc '0-9' < /dev/urandom | head -c 6)
 EOF
-    echo "✅ .env created with secure JWT_SECRET"
-    echo "⚠️  Edit .env to add YouTube API key, SENTRY_DSN and VITE_SENTRY_DSN"
+    echo "✅ .env created with secure ACCESS_TOKEN_SECRET and random seed PINs"
+    echo "⚠️  PINs are in $APP_DIR/.env — rotate them later from Settings in the app"
 else
     echo "✅ .env already exists"
-    # Ensure new Sentry vars exist in old .env files
-    grep -q "^SENTRY_DSN=" .env || echo "SENTRY_DSN=" >> .env
-    grep -q "^VITE_SENTRY_DSN=" .env || echo "VITE_SENTRY_DSN=" >> .env
 fi
 
 echo -e "${YELLOW}Step 6: Building frontend...${NC}"
@@ -126,6 +125,8 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        # /api/events is a server-sent stream — buffering would stall it
+        proxy_buffering off;
     }
 }
 EOF
@@ -161,8 +162,6 @@ echo "App URL: https://$DOMAIN"
 echo "Service status: systemctl status jamjar"
 echo "Logs: journalctl -u jamjar -f"
 echo ""
-echo "Default accounts are seeded automatically."
-echo "Change PINs in seed.js and re-run 'node seed.js' for production."
-echo ""
-echo "⚠️  IMPORTANT: Change default PINs in seed.js and re-run 'node seed.js' if needed"
+echo "Accounts are seeded from the PINs in $APP_DIR/.env."
+echo "Rotate them any time in the app's Settings screen (parent login)."
 echo ""

@@ -30,15 +30,19 @@ pnpm dev:vite     # Frontend on :3000
 
 ## First-Time Setup
 
-1. Create a parent account through the UI
-2. Create child accounts (Yoto/iPod profiles)
-3. Kids can start requesting music!
+Seed the database with a parent + two child accounts (PINs come from `.env`):
+
+```bash
+PARENT_PIN=111111 CRISTINA_PIN=222222 ISABELLA_PIN=333333 pnpm seed
+```
+
+Then log in as **parent** → Settings to rename accounts, change avatars, add
+more children, or rotate PINs.
 
 ## Environment Variables (optional)
 
 ```env
 PORT=3001
-JWT_SECRET=your-secret-key
 YOUTUBE_API_KEY=your_youtube_api_key
 DOWNLOAD_DIR=./downloads
 MAX_CONCURRENT_DOWNLOADS=2
@@ -48,6 +52,9 @@ BACKUP_KEEP=7
 LOG_LEVEL=info
 ACCESS_TOKEN_SECRET=change-me
 ACCESS_TOKEN_TTL=300
+ALLOWED_ORIGIN=https://your-domain.example
+YTDLP_PATH=/usr/local/bin/yt-dlp
+YTDLP_COOKIES_FILE=./cookies.txt
 ```
 
 ## Operations
@@ -94,7 +101,7 @@ Use Cloudflare Tunnel for public access (no port forwarding needed).
 ## Tech Stack
 - **Backend:** Express 5 + SQLite (better-sqlite3)
 - **Frontend:** React 19 + Vite + TailwindCSS v4
-- **Auth:** Session-based with 4-digit PINs
+- **Auth:** Cookie sessions with PINs (4–8 digits) + CSRF protection
 - **Animations:** Framer Motion
 - **State:** Zustand
 - **Downloader:** yt-dlp

@@ -50,12 +50,15 @@ Open `https://jamjar.antoniosmith.xyz` in your browser.
 
 ## Post-Deployment
 
-### Change Default PINs
+### Change the Seed PINs
 
-Edit `/opt/jamjar/seed.js` with new PINs, then:
+The deploy script writes random first-run PINs to `/opt/jamjar/.env`
+(`PARENT_PIN`, `CRISTINA_PIN`, `ISABELLA_PIN`). To change them later, log in as
+parent → Settings → rotate the PIN there. To re-seed from scratch:
 
 ```bash
 cd /opt/jamjar
+# edit .env with the PINs you want
 rm -rf data/
 node seed.js
 systemctl restart jamjar
@@ -70,10 +73,6 @@ YOUTUBE_API_KEY=your_key_here
 ```
 
 Then restart:
-
-```bash
-systemctl restart jamjar
-```
 
 ```bash
 systemctl restart jamjar
@@ -150,7 +149,7 @@ systemctl restart jamjar
 ## Security Notes
 
 - The app runs as a restricted system user (`jamjar`)
-- JWT secret is auto-generated (256-bit random)
+- `ACCESS_TOKEN_SECRET` is auto-generated (256-bit random)
 - SSL is enforced via Let's Encrypt
 - Database is stored in `/opt/jamjar/data/`
 - Downloads are stored in `/opt/jamjar/downloads/`
