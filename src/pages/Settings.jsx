@@ -219,17 +219,19 @@ function UserRow({ user, onChanged }) {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-3 py-3 border-b border-[var(--border-subtle)] last:border-0">
-      <span aria-hidden className="text-xl">
-        {user.avatar_emoji || "👤"}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium text-[var(--text-primary)] truncate">
-          {user.display_name || user.username}
-        </div>
-        <div className="text-xs text-[var(--text-muted)]">
-          @{user.username} · {user.request_count} request
-          {user.request_count === 1 ? "" : "s"}
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3 border-b border-[var(--border-subtle)] last:border-0">
+      <div className="flex items-center gap-3 min-w-0 flex-1 basis-48">
+        <span aria-hidden className="text-xl flex-shrink-0">
+          {user.avatar_emoji || "👤"}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium text-[var(--text-primary)] truncate">
+            {user.display_name || user.username}
+          </div>
+          <div className="text-xs text-[var(--text-muted)] truncate">
+            @{user.username} · {user.request_count} request
+            {user.request_count === 1 ? "" : "s"}
+          </div>
         </div>
       </div>
       <Badge tone={badge.tone}>{badge.label}</Badge>
