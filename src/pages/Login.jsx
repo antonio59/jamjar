@@ -16,6 +16,14 @@ const CARD_COLORS = {
 
 const PROFILE_TAGS = { yoto: "Yoto", ipod: "iPod", parent: "Grown-up" };
 
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 5) return "Up late";
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+}
+
 // Ambient floating notes — fixed layout so positions never reshuffle
 const NOTES = [
   { e: "🎵", left: "6%",  size: 38, dur: 14, delay: 0 },
@@ -175,7 +183,7 @@ export default function Login() {
             transition={{ delay: 0.15 }}
             className="text-lg text-[var(--text-secondary)] mt-2 mb-10"
           >
-            Who's listening today? 🎧
+            {greeting()}! Who's listening? 🎧
           </motion.p>
 
           {profilesError && (

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import useStore from "../store/useStore";
 import { thumbUrl } from "../api/client";
+import ConfettiBurst from "../components/ConfettiBurst";
 import {
   Card,
   Stepper,
@@ -909,7 +910,8 @@ function SuccessCard({ submitted, onAddAnother }) {
       animate={{ scale: 1, opacity: 1 }}
       className="max-w-md mx-auto mt-12"
     >
-      <Card padding="lg" className="border-[var(--success-border)] bg-[var(--success-soft)] text-center">
+      <Card padding="lg" className="relative border-[var(--success-border)] bg-[var(--success-soft)] text-center overflow-visible">
+        <ConfettiBurst />
         <div className="w-14 h-14 rounded-full bg-[var(--success-solid)] text-white flex items-center justify-center mx-auto mb-4">
           <CheckCircle className="w-7 h-7" />
         </div>
