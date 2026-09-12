@@ -383,7 +383,7 @@ router.post("/requests", authenticateSession, (req, res) => {
       cleanedTitle,
       url,
       type,
-      searchQuery,
+      searchQuery || "",
       thumbnail,
       duration,
       artist,

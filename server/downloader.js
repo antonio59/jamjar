@@ -73,7 +73,7 @@ export async function downloadAndUpload(request) {
     }
 
     const downloadUrl = `/api/downloads/${request.profile}/${downloadedFile}`;
-    updateRequestStatus(request.id, "completed", null, downloadUrl);
+    updateRequestStatus(request.id, "completed", null, downloadUrl, stat.size);
     logger.info("download complete", {
       requestId: request.id,
       title: request.title,

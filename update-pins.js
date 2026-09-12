@@ -18,10 +18,15 @@ if (!NEW_PIN) {
 }
 
 const db = new Database(DB_PATH);
-const hashedPin = bcrypt.hashSync(NEW_PIN, 10);
-const result = db.prepare('UPDATE users SET pin = ?').run(hashedPin);
+const hashedPin = bcrypt.hashSync(NEW_PIN, 12);
+// Bump credentials_changed_at so signed access tokens die, and drop all
+// sessions — same semantics as updateUserPin() in server/database.js.
+const result = db.prepare(
+  'UPDATE users SET pin = ?, credentials_changed_at = ?'
+).run(hashedPin, Date.now());
+db.prepare('DELETE FROM sessions').run();
 
-console.log(`✅ Updated ${result.changes} user(s) — PIN hashed with bcrypt`);
+console.log(`✅ Updated ${result.changes} user(s) — PIN hashed with bcrypt, sessions revoked`);
 
 const users = db.prepare('SELECT username, role, display_name FROM users').all();
 console.log('\nCurrent users:');

@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import bcrypt from 'bcryptjs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import readline from 'readline';
@@ -13,9 +14,15 @@ function getAllUsers() {
   return db.prepare('SELECT id, username, role, profile, display_name FROM users ORDER BY role, username').all();
 }
 
+// Mirrors updateUserPin() in server/database.js: bcrypt hash + bump
+// credentials_changed_at so signed access tokens die, and drop live sessions.
 function setPin(username, pin) {
-  const stmt = db.prepare('UPDATE users SET pin = ? WHERE username = ?');
-  const result = stmt.run(pin, username);
+  const user = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  if (!user) return false;
+  const result = db
+    .prepare('UPDATE users SET pin = ?, credentials_changed_at = ? WHERE id = ?')
+    .run(bcrypt.hashSync(pin, 12), Date.now(), user.id);
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id);
   return result.changes > 0;
 }
 
@@ -29,7 +36,7 @@ if (args.length === 2) {
     process.exit(1);
   }
   if (setPin(username, pin)) {
-    console.log(`✅ PIN updated for ${username}`);
+    console.log(`✅ PIN updated for ${username} (sessions revoked)`);
   } else {
     console.error(`❌ User "${username}" not found.`);
     process.exit(1);
@@ -74,10 +81,10 @@ async function run() {
       continue;
     }
     setPin(user.username, pin);
-    console.log(`  ✅ PIN updated`);
+    console.log(`  ✅ PIN updated (sessions revoked)`);
   }
 
-  console.log('\n✅ Done. Restart the server for changes to take effect if using in-memory sessions.\n');
+  console.log('\n✅ Done.\n');
   rl.close();
   db.close();
 }
