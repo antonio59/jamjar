@@ -63,7 +63,7 @@ export default function Navbar() {
           </Link>
 
           {/* Desktop links */}
-          <div className="hidden md:flex items-center gap-1">
+          <div className="hidden lg:flex items-center gap-1">
             {links.map((l) => {
               const Icon = l.icon;
               const active = isActive(l.to);
@@ -87,7 +87,7 @@ export default function Navbar() {
           </div>
 
           {/* Right side: profile + theme + logout */}
-          <div className="hidden md:flex items-center gap-2">
+          <div className="hidden lg:flex items-center gap-2">
             <span
               className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[var(--r-pill)] text-xs font-medium bg-[var(--surface-2)] text-[var(--text-secondary)] border border-[var(--border-subtle)]"
               title={`${user.role === "parent" ? "Parent" : "Child"} · ${badge.label}`}
@@ -104,7 +104,7 @@ export default function Navbar() {
           </div>
 
           {/* Mobile right cluster */}
-          <div className="flex md:hidden items-center gap-1">
+          <div className="flex lg:hidden items-center gap-1">
             <ThemeToggle />
             <IconButton
               size="sm"
@@ -118,7 +118,7 @@ export default function Navbar() {
 
         {/* Mobile expanded menu */}
         {menuOpen && (
-          <div className="md:hidden border-t border-[var(--border-subtle)] py-2">
+          <div className="lg:hidden border-t border-[var(--border-subtle)] py-2">
             <div className="flex items-center gap-2 px-2 py-2 border-b border-[var(--border-subtle)] mb-2">
               <span aria-hidden className="text-lg">
                 {badge.emoji}
