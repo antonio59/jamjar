@@ -295,7 +295,7 @@ export default function Home() {
       <Card padding="lg" className="overflow-hidden">
         <Stepper steps={steps} current={stepIdx} onJump={goTo} />
 
-        <div className="mt-6 min-h-[280px]">
+        <div className="mt-6 min-h-[220px] flex flex-col justify-center">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentStepId}
