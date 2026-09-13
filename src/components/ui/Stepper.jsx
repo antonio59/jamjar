@@ -37,14 +37,14 @@ export default function Stepper({ steps, current, onJump }) {
               <span className="hidden sm:block min-w-0">
                 <span
                   className={cx(
-                    "block text-xs font-semibold truncate",
+                    "block text-xs font-semibold leading-snug",
                     isActive ? "text-[var(--text-primary)]" : "text-[var(--text-muted)]",
                   )}
                 >
                   {step.label}
                 </span>
                 {step.hint && (
-                  <span className="block text-[11px] text-[var(--text-muted)] truncate">
+                  <span className="block text-[11px] leading-tight text-[var(--text-muted)]">
                     {step.hint}
                   </span>
                 )}
