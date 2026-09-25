@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import http from 'http';
 import { createHash } from 'crypto';
+import axios from 'axios';
 import request from 'supertest';
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jamjar-test-'));
@@ -14,6 +15,12 @@ process.env.YOUTUBE_API_KEY = '';
 // Never shell out to yt-dlp from the test suite
 vi.mock('../server/downloader.js', () => ({
   downloadAndUpload: vi.fn(async () => {}),
+}));
+
+// Typesafe calls + external fetches are mocked; per-test responses are queued
+// on axios.post (the TypeSafe systemone endpoint).
+vi.mock('axios', () => ({
+  default: { get: vi.fn(), post: vi.fn() },
 }));
 
 let app;
@@ -442,6 +449,116 @@ describe('search', () => {
       .set('X-Session-Id', childSession);
     expect(res.status).toBe(200);
     expect(res.body.every((r) => !r.isExplicit)).toBe(true);
+  });
+});
+
+describe('duplicate tracking', () => {
+  it('counts the same recording across labels, per device', async () => {
+    const first = await request(app)
+      .post('/api/requests')
+      .set('X-Session-Id', childSession)
+      .send({
+        profile: 'yoto',
+        title: 'Artist X - Song Y (Official Video)',
+        url: 'https://www.youtube.com/watch?v=ZbZSe6N_BXs',
+        type: 'music',
+        searchQuery: 'song y',
+      });
+    expect(first.status).toBe(200);
+    expect(first.body.track_key).toBe('artist x song y');
+
+    // Simulate the first download landing on the Yoto
+    db.prepare(
+      "UPDATE requests SET status = 'completed', file_path = '/api/downloads/yoto/Artist X - Song Y.mp3', downloaded_at = CURRENT_TIMESTAMP WHERE id = ?",
+    ).run(first.body.id);
+
+    const sameDevice = await request(app)
+      .get('/api/requests/check-duplicate')
+      .query({ title: 'Artist X - Song Y (Clean)', profile: 'yoto' })
+      .set('X-Session-Id', childSession);
+    expect(sameDevice.body).toMatchObject({
+      count: 1,
+      sameProfile: 1,
+      otherProfile: 0,
+    });
+
+    const otherDevice = await request(app)
+      .get('/api/requests/check-duplicate')
+      .query({ title: 'artist x — song y', profile: 'ipod' })
+      .set('X-Session-Id', childSession);
+    expect(otherDevice.body).toMatchObject({ sameProfile: 0, otherProfile: 1 });
+
+    // A repeat request is accepted but reports the duplicate context, and the
+    // request itself isn't counted in its own in-flight figure.
+    const again = await request(app)
+      .post('/api/requests')
+      .set('X-Session-Id', childSession)
+      .send({
+        profile: 'yoto',
+        title: 'Artist X - Song Y (Radio Edit)',
+        type: 'music',
+        searchQuery: 'song y',
+      });
+    expect(again.status).toBe(200);
+    expect(again.body.duplicates.sameProfile).toBe(1);
+    expect(again.body.duplicates.inFlight).toBe(0);
+  });
+});
+
+describe('clean gate (typesafe)', () => {
+  it('rejects music Jev scores below threshold, passes above', async () => {
+    process.env.TYPESAFE_API_KEY = 'test-key';
+    try {
+      axios.post.mockResolvedValueOnce({
+        data: { answers: { t0: { type: 'noul', noul: 0.1 } } },
+      });
+      const blocked = await request(app)
+        .post('/api/requests')
+        .set('X-Session-Id', childSession)
+        .send({
+          profile: 'yoto',
+          title: 'Some Band - Questionable Song',
+          type: 'music',
+          searchQuery: 'questionable song',
+        });
+      expect(blocked.status).toBe(400);
+      expect(blocked.body.notClean).toBe(true);
+
+      axios.post.mockResolvedValueOnce({
+        data: { answers: { t0: { type: 'noul', noul: 0.95 } } },
+      });
+      const ok = await request(app)
+        .post('/api/requests')
+        .set('X-Session-Id', childSession)
+        .send({
+          profile: 'yoto',
+          title: 'Some Band - Perfectly Fine Song',
+          type: 'music',
+          searchQuery: 'fine song',
+        });
+      expect(ok.status).toBe(200);
+    } finally {
+      delete process.env.TYPESAFE_API_KEY;
+    }
+  });
+
+  it('skips the Jev call for labelled clean titles', async () => {
+    process.env.TYPESAFE_API_KEY = 'test-key';
+    try {
+      const res = await request(app)
+        .post('/api/requests')
+        .set('X-Session-Id', childSession)
+        .send({
+          profile: 'yoto',
+          title: 'Some Band - Labelled Tune (Clean)',
+          type: 'music',
+          searchQuery: 'labelled tune',
+        });
+      expect(res.status).toBe(200);
+      expect(axios.post).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.TYPESAFE_API_KEY;
+    }
   });
 });
 

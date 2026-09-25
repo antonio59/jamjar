@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { publishRequestChange } from './requestEvents.js';
+import { trackKey } from './trackIdentity.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -131,6 +132,21 @@ const migrations = [
       } catch {} // Column may already exist on retry
     },
   },
+  {
+    version: 5,
+    up() {
+      // Canonical dedupe key — "(Clean)" and "(Official Video)" uploads of the
+      // same recording share a track_key, which is what duplicate tracking and
+      // same-device file reuse key off.
+      try {
+        db.exec('ALTER TABLE requests ADD COLUMN track_key TEXT');
+      } catch {} // Column may already exist on retry
+      db.exec('CREATE INDEX IF NOT EXISTS idx_requests_track_key ON requests(track_key)');
+      const rows = db.prepare('SELECT id, title FROM requests WHERE track_key IS NULL').all();
+      const update = db.prepare('UPDATE requests SET track_key = ? WHERE id = ?');
+      for (const r of rows) update.run(trackKey(r.title), r.id);
+    },
+  },
 ];
 
 const applied = new Set(
@@ -222,10 +238,10 @@ export async function verifyPin(username, pin) {
 export function createRequest(userId, profile, title, url, type, searchQuery, thumbnail, duration, artist = null) {
   const id = uuidv4();
   const stmt = db.prepare(
-    `INSERT INTO requests (id, user_id, profile, title, url, type, status, search_query, thumbnail, duration, artist)
-     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
+    `INSERT INTO requests (id, user_id, profile, title, url, type, status, search_query, thumbnail, duration, artist, track_key)
+     VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`
   );
-  stmt.run(id, userId, profile, title, url, type, searchQuery, thumbnail, duration, artist);
+  stmt.run(id, userId, profile, title, url, type, searchQuery, thumbnail, duration, artist, trackKey(title));
   const request = getRequestById(id);
   publishRequestChange({ type: 'created', request });
   return request;
@@ -236,14 +252,20 @@ export function getRequestById(id) {
   return stmt.get(id);
 }
 
+// Completed rows count as duplicates on the canonical track_key when the row
+// has one, else on the raw title (pre-migration or keyless rows).
+const DUPLICATE_COUNT_SQL = `
+  (SELECT COUNT(*) FROM requests r2
+   WHERE r2.status = 'completed'
+     AND ((r.track_key IS NOT NULL AND r2.track_key = r.track_key)
+          OR (r.track_key IS NULL AND LOWER(r2.title) = LOWER(r.title))))
+`;
+
 // Returns all requests with a download_count field showing how many times
-// a track with the same title has been successfully completed
+// a track with the same identity has been successfully completed
 export function getAllRequests() {
   return db.prepare(`
-    SELECT r.*,
-      (SELECT COUNT(*) FROM requests r2
-       WHERE LOWER(r2.title) = LOWER(r.title)
-         AND r2.status = 'completed') AS download_count
+    SELECT r.*, ${DUPLICATE_COUNT_SQL} AS download_count
     FROM requests r
     ORDER BY r.created_at DESC
   `).all();
@@ -256,21 +278,48 @@ export function getPendingRequests() {
 
 export function getRequestsByProfile(profile) {
   return db.prepare(`
-    SELECT r.*,
-      (SELECT COUNT(*) FROM requests r2
-       WHERE LOWER(r2.title) = LOWER(r.title)
-         AND r2.status = 'completed') AS download_count
+    SELECT r.*, ${DUPLICATE_COUNT_SQL} AS download_count
     FROM requests r
     WHERE r.profile = ?
     ORDER BY r.created_at DESC
   `).all(profile);
 }
 
-// Returns count of completed downloads matching this title (for duplicate detection)
-export function getDownloadCountByTitle(title) {
+// Per-device duplicate picture for a track key: completed copies on each
+// profile plus same-profile requests still in flight (pending → downloading),
+// so a second identical request is visible before the first one even lands.
+export function getDuplicateInfo(key, profile, excludeId = null) {
+  const empty = { count: 0, sameProfile: 0, otherProfile: 0, inFlight: 0 };
+  if (!key) return empty;
+  const rows = db.prepare(
+    `SELECT id, profile, status FROM requests WHERE track_key = ?`
+  ).all(key);
+  const info = { ...empty };
+  for (const r of rows) {
+    if (r.id === excludeId) continue;
+    if (r.status === 'completed') {
+      if (r.profile === profile) info.sameProfile += 1;
+      else info.otherProfile += 1;
+    } else if (
+      r.profile === profile &&
+      ['pending', 'approved', 'downloading'].includes(r.status)
+    ) {
+      info.inFlight += 1;
+    }
+  }
+  info.count = info.sameProfile + info.otherProfile;
+  return info;
+}
+
+// Newest completed sibling on the same device — the downloader points repeat
+// requests at this file instead of downloading a second copy.
+export function findCompletedTrackFile(key, profile) {
+  if (!key) return null;
   return db.prepare(
-    "SELECT COUNT(*) AS count FROM requests WHERE LOWER(title) = LOWER(?) AND status = 'completed'"
-  ).get(title)?.count ?? 0;
+    `SELECT file_path, file_size_bytes FROM requests
+     WHERE track_key = ? AND profile = ? AND status = 'completed' AND file_path IS NOT NULL
+     ORDER BY downloaded_at DESC LIMIT 1`
+  ).get(key, profile) ?? null;
 }
 
 // Returns list of distinct artists from completed requests

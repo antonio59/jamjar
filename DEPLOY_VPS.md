@@ -70,6 +70,8 @@ Edit `/opt/jamjar/.env`:
 
 ```env
 YOUTUBE_API_KEY=your_key_here
+# Optional: AI clean-version check for unlabelled tracks (TypeSafe Jev)
+TYPESAFE_API_KEY=your_typesafe_key_here
 ```
 
 Then restart:

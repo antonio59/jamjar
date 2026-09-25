@@ -20,7 +20,7 @@ import {
   addBlockedKeyword,
   removeBlockedKeyword,
   getRequestById,
-  getDownloadCountByTitle,
+  getDuplicateInfo,
   getArtists,
   resetRequestForRetry,
   createUser,
@@ -37,7 +37,9 @@ import {
   purgeExpiredSessions,
 } from "../database.js";
 import { searchYouTube } from "../youtube.js";
-import { isExplicitTitle } from "../cleanFilter.js";
+import { isCleanTitle, isExplicitTitle } from "../cleanFilter.js";
+import { judgeTitleClean, typesafeEnabled, cleanThreshold } from "../typesafe.js";
+import { normalizeTitle, trackKey } from "../trackIdentity.js";
 import { enqueueDownload, queueStatus } from "../downloadQueue.js";
 import { healthDetails } from "./health.js";
 import logger from "../logger.js";
@@ -49,32 +51,8 @@ const __dirname = path.dirname(__filename);
 const DOWNLOAD_DIR =
   process.env.DOWNLOAD_DIR || path.join(__dirname, "../../downloads");
 
-const TITLE_NOISE = /[[(][\s\w]*(official\s*(lyric|music|audio|hd|4k)?(\s*video)?|lyric[s]?|audio|hd|4k|explicit|remaster(ed)?|visuali[sz]er|performance\s*video|topic)[\s\w]*[\])]/gi;
-
-// Generic / placeholder titles that should be flagged and improved, not stored
-// silently — the request UI now requires an editable title, so these only
-// arrive from older imports or odd YouTube metadata.
-const GENERIC_TITLES = new Set([
-  "video from url",
-  "youtube video",
-  "untitled",
-  "song",
-]);
-
-function normalizeTitle(title, fallback = null) {
-  if (!title || typeof title !== "string") {
-    return fallback || "Untitled track";
-  }
-  let cleaned = title.replace(TITLE_NOISE, "").replace(/\s{2,}/g, " ").trim();
-  if (cleaned.length > 200) cleaned = cleaned.slice(0, 200).trim();
-  if (!cleaned || GENERIC_TITLES.has(cleaned.toLowerCase())) {
-    return fallback || cleaned || "Untitled track";
-  }
-  return cleaned;
-}
-
-// Alias kept for the rest of the file — same behavior as before, plus the
-// extra noise/length guards.
+// Title cleanup lives in trackIdentity.js so the API, DB backfill, and
+// downloader share one convention.
 const cleanTitle = normalizeTitle;
 
 const router = express.Router();
@@ -374,7 +352,7 @@ router.get("/video-info", authenticateSession, async (req, res) => {
 });
 
 // Request routes
-router.post("/requests", authenticateSession, (req, res) => {
+router.post("/requests", authenticateSession, async (req, res) => {
   try {
     const { profile, title, url, type, searchQuery, thumbnail, duration, direct } =
       req.body;
@@ -417,6 +395,23 @@ router.post("/requests", authenticateSession, (req, res) => {
       });
     }
 
+    // Unlabelled music titles get a Jev judgment when TypeSafe is configured —
+    // labelled clean cuts pass without the extra round trip.
+    if (
+      !allowExplicit &&
+      type === "music" &&
+      typesafeEnabled() &&
+      !isCleanTitle(title)
+    ) {
+      const p = await judgeTitleClean(cleanedTitle);
+      if (p !== null && p < cleanThreshold()) {
+        return res.status(400).json({
+          error: "That doesn't look like the clean version",
+          notClean: true,
+        });
+      }
+    }
+
     let request = createRequest(
       req.user.id,
       profile,
@@ -437,7 +432,13 @@ router.post("/requests", authenticateSession, (req, res) => {
       }
     }
 
-    res.json(request);
+    // Surface duplicate context so the UI can say "already on iPod" even though
+    // the request was accepted. The request itself is excluded — it's the one
+    // being reported on, not a duplicate.
+    res.json({
+      ...request,
+      duplicates: getDuplicateInfo(request.track_key, profile, request.id),
+    });
   } catch {
     res.status(500).json({ error: "Failed to create request" });
   }
@@ -633,13 +634,18 @@ router.post(
   },
 );
 
-// Check how many times a title has been downloaded (duplicate detection)
+// Per-device duplicate check — same canonical key on this device, the other
+// device, or still in flight for this one.
 router.get("/requests/check-duplicate", authenticateSession, (req, res) => {
   try {
     const { title } = req.query;
-    if (!title) return res.json({ count: 0 });
-    const count = getDownloadCountByTitle(title);
-    res.json({ count });
+    const profile = ["yoto", "ipod"].includes(req.query.profile)
+      ? req.query.profile
+      : req.user.profile;
+    if (!title || !profile) {
+      return res.json({ count: 0, sameProfile: 0, otherProfile: 0, inFlight: 0 });
+    }
+    res.json(getDuplicateInfo(trackKey(title), profile));
   } catch {
     res.status(500).json({ error: "Failed to check duplicate" });
   }

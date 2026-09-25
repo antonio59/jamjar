@@ -33,7 +33,15 @@ mkdir -p /etc/apt/keyrings
 curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
 echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" > /etc/apt/sources.list.d/nodesource.list
 apt-get update -qq
-apt-get install -y -qq nodejs nginx certbot python3-certbot-nginx yt-dlp > /dev/null 2>&1
+apt-get install -y -qq nodejs nginx certbot python3-certbot-nginx > /dev/null 2>&1
+
+# yt-dlp from the official release, NOT apt — the distro package is months
+# stale and YouTube breaks old extractors (the #1 cause of mass download
+# failures). Self-updates with `yt-dlp -U`.
+curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
+    -o /usr/local/bin/yt-dlp
+chmod a+rx /usr/local/bin/yt-dlp
+/usr/local/bin/yt-dlp --version
 
 # Enable pnpm via corepack
 corepack enable pnpm
@@ -66,6 +74,8 @@ DB_PATH=$APP_DIR/data/jamjar.db
 DOWNLOAD_DIR=$APP_DIR/downloads
 ACCESS_TOKEN_SECRET=$(openssl rand -hex 32)
 YOUTUBE_API_KEY=
+# Optional clean-version AI check — regex labels run alone without it
+TYPESAFE_API_KEY=
 # Seed accounts — change these, they are the first-run PINs
 PARENT_PIN=$(tr -dc '0-9' < /dev/urandom | head -c 6)
 CRISTINA_PIN=$(tr -dc '0-9' < /dev/urandom | head -c 6)

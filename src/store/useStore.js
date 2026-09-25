@@ -242,15 +242,16 @@ const useStore = create((set, get) => ({
     return response.data;
   },
 
-  checkDuplicate: async (title) => {
-    if (!get().isAuthenticated) return 0;
+  checkDuplicate: async (title, profile) => {
+    const empty = { count: 0, sameProfile: 0, otherProfile: 0, inFlight: 0 };
+    if (!get().isAuthenticated) return empty;
     try {
       const response = await api.get(`/requests/check-duplicate`, {
-        params: { title },
+        params: { title, profile },
       });
-      return response.data.count;
+      return response.data;
     } catch {
-      return 0;
+      return empty;
     }
   },
 

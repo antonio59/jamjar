@@ -53,9 +53,18 @@ LOG_LEVEL=info
 ACCESS_TOKEN_SECRET=change-me
 ACCESS_TOKEN_TTL=300
 ALLOWED_ORIGIN=https://your-domain.example
-YTDLP_PATH=/usr/local/bin/yt-dlp
+YTDLP_PATH=/usr/local/bin/yt-dlp   # optional — newest working binary is auto-detected
 YTDLP_COOKIES_FILE=./cookies.txt
+TYPESAFE_API_KEY=                  # optional — AI clean-version check via TypeSafe (Jev)
+TYPESAFE_CLEAN_THRESHOLD=0.5       # optional — noul probability floor for unlabelled tracks
 ```
+
+Files are named `Artist - Title.mp3` (numbered on collision) and tagged via
+ID3, so libraries stay tidy on both iPod and Yoto. Tracks are deduplicated on a
+canonical key — the same recording under different upload labels
+("(Official Video)", "(Clean)", "Radio Edit") counts as one track per device;
+a repeat request on the same device reuses the existing file instead of
+downloading again.
 
 ## Operations
 

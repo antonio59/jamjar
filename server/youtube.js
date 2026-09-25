@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { createYtDlp, baseArgs } from './ytdlp.js';
 import { applyCleanFilter, isCleanTitle } from './cleanFilter.js';
+import { judgeCleanVersions, typesafeEnabled, cleanThreshold } from './typesafe.js';
 import logger from './logger.js';
 
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
@@ -144,12 +145,38 @@ async function youtubeApiSearch(query, type) {
   }));
 }
 
+// Regex labels handle labelled explicit/clean cuts; Jev then judges the
+// unlabelled middle ground. Results with real evidence of explicit content are
+// dropped; unscored results pass through — silence isn't evidence. Skipped
+// entirely for parents browsing explicit results and for audiobooks.
+async function refineWithTypesafe(results, query, { allowExplicit, type }) {
+  if (allowExplicit || type === 'audiobook' || !typesafeEnabled() || results.length === 0) {
+    return results;
+  }
+  const scores = await judgeCleanVersions(query, results);
+  if (!scores) return results;
+  const threshold = cleanThreshold();
+  return results
+    .map((r) => ({ ...r, cleanScore: scores.get(r.id) ?? null }))
+    .filter((r) => r.cleanScore == null || r.isCleanLabelled || r.cleanScore >= threshold)
+    .sort(
+      (a, b) =>
+        Number(b.isCleanLabelled) - Number(a.isCleanLabelled) ||
+        (b.cleanScore ?? 0) - (a.cleanScore ?? 0),
+    );
+}
+
 export async function searchYouTube(query, type = 'music', { allowExplicit = false } = {}) {
   // If query is a YouTube URL, check if it's a playlist
   if (query.includes('youtube.com') || query.includes('youtu.be')) {
     if (isPlaylistUrl(query)) {
       const tracks = await getPlaylistTracks(query);
-      return applyCleanFilter(tracks, { allowExplicit }).map(t => ({
+      const filtered = await refineWithTypesafe(
+        applyCleanFilter(tracks, { allowExplicit }),
+        query,
+        { allowExplicit, type },
+      );
+      return filtered.map(t => ({
         ...t,
         isPlaylist: true,
         playlistTrackCount: tracks.length,
@@ -170,13 +197,17 @@ export async function searchYouTube(query, type = 'music', { allowExplicit = fal
       } catch {
         // oEmbed failed — title stays empty, frontend will show URL or fallback
       }
-      return applyCleanFilter([{
-        id: videoId,
-        title,
-        url: safeUrl,
-        thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
-        duration: 'Unknown',
-      }], { allowExplicit });
+      return refineWithTypesafe(
+        applyCleanFilter([{
+          id: videoId,
+          title,
+          url: safeUrl,
+          thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+          duration: 'Unknown',
+        }], { allowExplicit }),
+        title || query,
+        { allowExplicit, type },
+      );
     }
   }
 
@@ -194,7 +225,7 @@ export async function searchYouTube(query, type = 'music', { allowExplicit = fal
         );
       }
 
-      return results;
+      return refineWithTypesafe(results, query, { allowExplicit, type });
     } catch (error) {
       logger.error('youtube api error', { error: error.message });
     }
@@ -202,8 +233,12 @@ export async function searchYouTube(query, type = 'music', { allowExplicit = fal
   
   // Fall back to mock data
   const mockResults = type === 'music' ? mockMusicResults : mockAudiobookResults;
-  return applyCleanFilter(
-    mockResults.filter(r => r.title.toLowerCase().includes(query.toLowerCase())),
-    { allowExplicit },
+  return refineWithTypesafe(
+    applyCleanFilter(
+      mockResults.filter(r => r.title.toLowerCase().includes(query.toLowerCase())),
+      { allowExplicit },
+    ),
+    query,
+    { allowExplicit, type },
   );
 }

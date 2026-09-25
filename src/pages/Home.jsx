@@ -71,7 +71,7 @@ export default function Home() {
   const [searching, setSearching] = useState(false);
   const [searchedOnce, setSearchedOnce] = useState(false);
   const [selectedTrack, setSelectedTrack] = useState(null);
-  const [duplicateCount, setDuplicateCount] = useState(0);
+  const [duplicateInfo, setDuplicateInfo] = useState(null);
 
   // URL paste
   const [urlInput, setUrlInput] = useState("");
@@ -94,15 +94,15 @@ export default function Home() {
     setUrlPreview(null);
     setUrlError(null);
     setSearchedOnce(false);
-    setDuplicateCount(0);
+    setDuplicateInfo(null);
   };
 
   // Duplicate check — resets happen in clearSelection/handleSearch so this
   // effect only fetches for a newly selected track
   useEffect(() => {
     if (!selectedTrack) return;
-    checkDuplicate(selectedTrack.title).then(setDuplicateCount);
-  }, [selectedTrack, checkDuplicate]);
+    checkDuplicate(selectedTrack.title, profile).then(setDuplicateInfo);
+  }, [selectedTrack, profile, checkDuplicate]);
 
   // ── Step navigation ──────────────────────────────────────────────────────
   const steps = useMemo(() => {
@@ -140,7 +140,7 @@ export default function Home() {
   const handleSearch = async (q) => {
     setQuery(q);
     setSelectedTrack(null);
-    setDuplicateCount(0);
+    setDuplicateInfo(null);
     if (q.length < 2) {
       setResults([]);
       setSearchedOnce(false);
@@ -255,6 +255,8 @@ export default function Home() {
       if (status === 429) msg = "Going too fast! Wait a moment and try again.";
       if (err.response?.data?.explicit)
         msg = "That's the explicit version — look for the clean one instead.";
+      if (err.response?.data?.notClean)
+        msg = "That doesn't look like the clean version — pick the result marked Clean.";
       showToast(msg, "error");
     } finally {
       setSubmitting(false);
@@ -328,8 +330,9 @@ export default function Home() {
                   results={results}
                   searching={searching}
                   searchedOnce={searchedOnce}
+                  profile={profile}
                   selectedTrack={selectedTrack}
-                  duplicateCount={duplicateCount}
+                  duplicateInfo={duplicateInfo}
                   onSearch={handleSearch}
                   onSelectTrack={(r) => {
                     setSelectedTrack(r);
@@ -360,7 +363,7 @@ export default function Home() {
                   urlInput={urlInput}
                   urlTitle={urlTitle}
                   urlPreview={urlPreview}
-                  duplicateCount={duplicateCount}
+                  duplicateInfo={duplicateInfo}
                   isParent={isParent}
                 />
               )}
@@ -489,6 +492,21 @@ function TypeStep({ value, onChange }) {
 }
 
 /* ─── Step: Source ──────────────────────────────────────────────────────── */
+// Per-device duplicate wording — the downloader reuses the file when the same
+// track already exists on this device, so "again" doesn't cost a download.
+function duplicateMessage(dup, profile) {
+  if (!dup) return null;
+  const here = profile === "yoto" ? "the Yoto" : "the iPod";
+  const there = profile === "yoto" ? "the iPod" : "the Yoto";
+  const parts = [];
+  if (dup.sameProfile > 0) parts.push(`already in ${here} library`);
+  if (dup.otherProfile > 0) parts.push(`already on ${there}`);
+  if (dup.inFlight > 0 && dup.sameProfile === 0)
+    parts.push(`already on its way to ${here}`);
+  if (parts.length === 0) return null;
+  return `This track is ${parts.join(" and ")}.`;
+}
+
 function SourceStep(props) {
   const {
     type,
@@ -499,7 +517,8 @@ function SourceStep(props) {
     searching,
     searchedOnce,
     selectedTrack,
-    duplicateCount,
+    duplicateInfo,
+    profile,
     onSearch,
     onSelectTrack,
     urlInput,
@@ -630,7 +649,8 @@ function SourceStep(props) {
             <SelectedTrackCard
               track={selectedTrack}
               type={type}
-              duplicateCount={duplicateCount}
+              duplicateInfo={duplicateInfo}
+              profile={profile}
             />
           )}
         </div>
@@ -650,7 +670,7 @@ function SourceStep(props) {
   );
 }
 
-function SelectedTrackCard({ track, type, duplicateCount }) {
+function SelectedTrackCard({ track, type, duplicateInfo, profile }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-3 p-3 bg-[var(--brand-soft)] border border-[var(--brand-soft-strong)] rounded-[var(--r-lg)]">
@@ -674,17 +694,23 @@ function SelectedTrackCard({ track, type, duplicateCount }) {
           <p className="text-xs text-[var(--text-secondary)] truncate">
             {type === "audiobook" ? `by ${track.author}` : track.duration || "—"}
           </p>
+          {track.isCleanLabelled && (
+            <Badge tone="success" size="xs" className="mt-1">
+              Clean
+            </Badge>
+          )}
         </div>
         <CheckCircle className="w-5 h-5 text-[var(--brand)] flex-shrink-0" />
       </div>
-      {duplicateCount > 0 && (
+      {duplicateMessage(duplicateInfo, profile) && (
         <div className="flex items-start gap-2 p-3 bg-[var(--warning-soft)] border border-[var(--warning-border)] rounded-[var(--r-md)]">
           <AlertTriangle className="w-4 h-4 text-[var(--warning)] flex-shrink-0 mt-0.5" />
           <p className="text-sm text-[var(--text-secondary)]">
-            <span className="font-medium text-[var(--text-primary)]">Already downloaded.</span>{" "}
-            This title is in the library {duplicateCount}{" "}
-            time{duplicateCount !== 1 ? "s" : ""}. You can add it again if you
-            need another copy.
+            <span className="font-medium text-[var(--text-primary)]">Already have it.</span>{" "}
+            {duplicateMessage(duplicateInfo, profile)}{" "}
+            {duplicateInfo?.sameProfile > 0
+              ? "Adding it again won't download a second copy."
+              : "You can still add it — it'll be downloaded for this device too."}
           </p>
         </div>
       )}
@@ -795,7 +821,7 @@ function ConfirmStep({
   urlInput,
   urlTitle,
   urlPreview,
-  duplicateCount,
+  duplicateInfo,
   isParent,
 }) {
   const title =
@@ -886,13 +912,12 @@ function ConfirmStep({
         </ul>
       </div>
 
-      {duplicateCount > 0 && (
+      {duplicateMessage(duplicateInfo, profile) && (
         <div className="flex items-start gap-2 p-3 bg-[var(--warning-soft)] border border-[var(--warning-border)] rounded-[var(--r-md)]">
           <AlertTriangle className="w-4 h-4 text-[var(--warning)] flex-shrink-0 mt-0.5" />
           <p className="text-sm text-[var(--text-secondary)]">
             <span className="font-medium text-[var(--text-primary)]">Heads up:</span>{" "}
-            this title is already in the library {duplicateCount}× — adding it
-            again will create a duplicate.
+            {duplicateMessage(duplicateInfo, profile)}
           </p>
         </div>
       )}
