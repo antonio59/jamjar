@@ -43,6 +43,22 @@ curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
 chmod a+rx /usr/local/bin/yt-dlp
 /usr/local/bin/yt-dlp --version
 
+# PO Token provider — YouTube bot-checks datacenter IPs ("Sign in to confirm
+# you're not a bot"). bgutil-ytdlp-pot-provider generates proof-of-origin
+# tokens so yt-dlp looks legitimate. Two parts: a Docker HTTP service on
+# localhost:4416, and a yt-dlp plugin that fetches tokens from it.
+apt-get install -y -qq python3-pip > /dev/null 2>&1
+if ! command -v docker > /dev/null 2>&1; then
+    curl -fsSL https://get.docker.com | sh
+fi
+docker run --name bgutil -d --init --restart unless-stopped \
+    -p 127.0.0.1:4416:4416 brainicism/bgutil-ytdlp-pot-provider \
+    2>/dev/null || docker start bgutil > /dev/null 2>&1 \
+    || echo "⚠️  bgutil POT provider not running — YouTube may bot-check downloads"
+pip3 install -U bgutil-ytdlp-pot-provider --break-system-packages 2>/dev/null \
+    || pip3 install -U bgutil-ytdlp-pot-provider \
+    || echo "⚠️  bgutil plugin install failed"
+
 # Enable pnpm via corepack
 corepack enable pnpm
 echo "✅ Node.js $(node -v) installed, pnpm enabled"
@@ -76,6 +92,9 @@ ACCESS_TOKEN_SECRET=$(openssl rand -hex 32)
 YOUTUBE_API_KEY=
 # Optional clean-version AI check — regex labels run alone without it
 TYPESAFE_API_KEY=
+# YouTube cookies (Netscape format) — needed on datacenter IPs that get
+# "Sign in to confirm you're not a bot". See DEPLOY_VPS.md troubleshooting.
+# YTDLP_COOKIES_FILE=$APP_DIR/yt-cookies.txt
 # Seed accounts — change these, they are the first-run PINs
 PARENT_PIN=$(tr -dc '0-9' < /dev/urandom | head -c 6)
 CRISTINA_PIN=$(tr -dc '0-9' < /dev/urandom | head -c 6)

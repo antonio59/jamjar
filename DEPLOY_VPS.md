@@ -131,6 +131,30 @@ sudo certbot renew --dry-run
 sudo systemctl reload nginx
 ```
 
+### Downloads fail with "Sign in to confirm you're not a bot"
+
+YouTube aggressively bot-checks datacenter IPs. The deploy script installs a
+PO-token provider (bgutil) automatically, but on a flagged IP the player API
+still demands a logged-in session — you must supply account cookies:
+
+1. In a **private/incognito** browser window, log in to YouTube (a dedicated
+   Google account is recommended — the VPS IP will be associated with it).
+2. Export cookies in Netscape format — e.g. the "Get cookies.txt LOCALLY"
+   browser extension — while on `youtube.com`.
+3. Close the incognito window immediately (prevents YouTube rotating them).
+4. Upload to the VPS and point the app at it:
+
+   ```bash
+   scp yt-cookies.txt root@<vps-ip>:/opt/jamjar/yt-cookies.txt
+   # on the VPS:
+   echo 'YTDLP_COOKIES_FILE=/opt/jamjar/yt-cookies.txt' >> /opt/jamjar/.env
+   systemctl restart jamjar
+   ```
+
+Verify: `journalctl -u jamjar -f` while retrying a request, or run
+`sudo -u jamjar yt-dlp --cookies /opt/jamjar/yt-cookies.txt --simulate --print title <url>`.
+Cookies rotate — expect to re-export every few weeks/months if failures return.
+
 ### Database errors
 
 ```bash
