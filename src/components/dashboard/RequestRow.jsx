@@ -186,6 +186,11 @@ export default function RequestRow({
             </p>
           )}
 
+          {/* Live download progress — fed by SSE 'progress' events */}
+          {request.status === "downloading" && (
+            <DownloadProgress progress={request.downloadProgress} />
+          )}
+
           {/* Audio preview — only when ready and has playable URL */}
           {request.status === "completed" && request.file_path && (
             <MiniPlayer request={request} className="mt-3" />
@@ -397,6 +402,43 @@ function AudiobookUploadLane({ request, onMarkUploaded, onShowUploadGuide }) {
         </Button>
       )}
       {error && <span className="text-xs text-[var(--danger)]">{error}</span>}
+    </div>
+  );
+}
+
+/* ─── Download progress bar — live % from SSE, indeterminate when unknown ── */
+function DownloadProgress({ progress }) {
+  const pct = progress?.percent;
+  const stage = progress?.stage;
+  const eta = progress?.eta;
+  const label = stage === "converting" ? "Converting for iPod" : "Downloading";
+  const etaText =
+    eta == null
+      ? ""
+      : eta >= 120
+        ? ` · ~${Math.round(eta / 60)} min left`
+        : eta > 0
+          ? ` · ~${eta}s left`
+          : "";
+  return (
+    <div className="mt-3">
+      <div className="flex items-center justify-between text-xs text-[var(--text-muted)] mb-1">
+        <span>
+          {label}
+          {pct != null ? ` — ${pct}%` : "…"}
+          {etaText}
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full bg-[var(--surface-2)] overflow-hidden">
+        {pct != null ? (
+          <div
+            className="h-full rounded-full bg-[var(--brand)] transition-[width] duration-500"
+            style={{ width: `${pct}%` }}
+          />
+        ) : (
+          <div className="h-full w-1/3 rounded-full bg-[var(--brand)] animate-pulse" />
+        )}
+      </div>
     </div>
   );
 }

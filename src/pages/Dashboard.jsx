@@ -104,7 +104,20 @@ export default function Dashboard() {
 
       source.addEventListener("request", (event) => {
         attempts = 0;
-        const { type, request } = JSON.parse(event.data);
+        const change = JSON.parse(event.data);
+        // Download progress ticks stream at ~1/sec — merge into state instead
+        // of refetching the whole list each time.
+        if (change.type === "progress") {
+          setAllRequests((rs) =>
+            rs.map((r) =>
+              r.id === change.requestId
+                ? { ...r, downloadProgress: { stage: change.stage, percent: change.percent, eta: change.eta } }
+                : r,
+            ),
+          );
+          return;
+        }
+        const { type, request } = change;
         if (type === "updated" && request?.status === "completed") {
           showToast(`"${request.title}" is ready!`, "success");
         }

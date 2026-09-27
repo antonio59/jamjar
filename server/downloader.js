@@ -5,6 +5,10 @@ import { updateRequestStatus, findCompletedTrackFile } from "./database.js";
 import { createYtDlp, baseArgs, YTDLP_BIN } from "./ytdlp.js";
 import { convertForIpod } from "./ffmpeg.js";
 import {
+  reportProgress,
+  clearProgress,
+} from "./downloadProgress.js";
+import {
   cleanBaseName,
   normalizeTitle,
   splitArtistTitle,
@@ -46,13 +50,31 @@ function requestTags(request) {
   };
 }
 
+// yt-dlp "ETA 12:34" strings → seconds, so the UI can format one shape.
+function etaSeconds(eta) {
+  if (!eta) return null;
+  const parts = String(eta).split(":").map(Number);
+  if (parts.some((n) => !Number.isFinite(n))) return null;
+  return parts.reduce((acc, n) => acc * 60 + n, 0);
+}
+
+// yt-dlp-wrap's exec() spawns and parses [download] lines into 'progress'
+// events { percent, totalSize, currentSpeed, eta } — --newline keeps each
+// update on its own line so the parser sees them.
+function runYtDlp(args, onProgress) {
+  const emitter = createYtDlp().exec(args);
+  return new Promise((resolve, reject) => {
+    if (onProgress) emitter.on("progress", onProgress);
+    emitter.on("close", resolve);
+    emitter.on("error", reject);
+  });
+}
+
 async function downloadAudio(request, outputDir, fileName, isYoto) {
   const outputFile = path.join(
     outputDir,
     fileName.replace(/\.mp3$/, ".%(ext)s"),
   );
-
-  const ytDlp = createYtDlp();
 
   // Build CLI args array — yt-dlp-wrap.exec() takes string[], not an options object
   const args = [
@@ -63,6 +85,7 @@ async function downloadAudio(request, outputDir, fileName, isYoto) {
     "--audio-quality", isYoto ? "5" : "0",
     "-o", outputFile,
     "--no-playlist",
+    "--newline",
     ...baseArgs(),
   ];
 
@@ -78,7 +101,15 @@ async function downloadAudio(request, outputDir, fileName, isYoto) {
   }
 
   logger.info("yt-dlp invoked", { bin: YTDLP_BIN, url: request.url });
-  await ytDlp.execPromise(args);
+  await runYtDlp(args, (p) =>
+    reportProgress(
+      request.id,
+      request.profile,
+      "downloading",
+      p.percent,
+      etaSeconds(p.eta),
+    ),
+  );
 }
 
 // Video requests land on the iPod as MPEG-2 .mpg — the only thing Rockbox's
@@ -98,17 +129,26 @@ async function downloadVideo(request, outputDir, fileName) {
     }
   }
 
-  const ytDlp = createYtDlp();
   const args = [
     request.url,
     "-f", "bv*[height<=720][fps<=30]+ba/b[height<=720][fps<=30]/bv*[height<=720]+ba/b[height<=720]/b",
     "-o", srcPattern,
     "--no-playlist",
+    "--newline",
     ...baseArgs(),
   ];
 
+  // Download fills the first half of the bar; the transcode is the second.
   logger.info("yt-dlp invoked (video)", { bin: YTDLP_BIN, url: request.url });
-  await ytDlp.execPromise(args);
+  await runYtDlp(args, (p) =>
+    reportProgress(
+      request.id,
+      request.profile,
+      "downloading",
+      p.percent * 0.5,
+      etaSeconds(p.eta),
+    ),
+  );
 
   // yt-dlp resolves %(ext)s itself — find whatever container it landed in
   const srcName = fs
@@ -121,10 +161,22 @@ async function downloadVideo(request, outputDir, fileName) {
 
   try {
     logger.info("converting video for iPod", { requestId: request.id });
+    const startedAt = Date.now();
     await convertForIpod(
       srcPath,
       path.join(outputDir, fileName),
       requestTags(request),
+      (pct) =>
+        reportProgress(
+          request.id,
+          request.profile,
+          "converting",
+          50 + pct * 0.5,
+          // Rough remaining-time guess from elapsed vs percent done.
+          pct >= 5
+            ? Math.round(((Date.now() - startedAt) / 1000) * (100 - pct) / pct)
+            : null,
+        ),
     );
   } finally {
     try {
@@ -208,5 +260,7 @@ export async function downloadAndUpload(request) {
       error: error.message,
     });
     updateRequestStatus(request.id, "failed", error.message);
+  } finally {
+    clearProgress(request.id);
   }
 }

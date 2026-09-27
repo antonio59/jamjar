@@ -1,4 +1,5 @@
 import fs from "fs";
+import path from "path";
 import { spawn, spawnSync } from "child_process";
 import logger from "./logger.js";
 
@@ -53,6 +54,43 @@ const resolved = resolve();
 export const FFMPEG_BIN = resolved.path;
 export const FFMPEG_VERSION = resolved.version;
 
+// ffprobe ships alongside ffmpeg — needed to get the source duration so
+// conversion can report a percentage instead of spinning blind.
+const FFPROBE_BIN = (() => {
+  const candidates = [
+    process.env.FFPROBE_PATH,
+    (() => {
+      try {
+        return spawnSync("which", ["ffprobe"], { timeout: 3000 })
+          .stdout?.toString().trim().split("\n")[0] || null;
+      } catch {
+        return null;
+      }
+    })(),
+    path.join(path.dirname(FFMPEG_BIN), "ffprobe"),
+    "/opt/homebrew/bin/ffprobe",
+    "/usr/local/bin/ffprobe",
+    "/usr/bin/ffprobe",
+  ].filter(Boolean);
+  return candidates.find((c) => fs.existsSync(c)) ?? null;
+})();
+
+function probeDurationSeconds(file) {
+  if (!FFPROBE_BIN) return null;
+  try {
+    const res = spawnSync(
+      FFPROBE_BIN,
+      ["-v", "error", "-show_entries", "format=duration",
+       "-of", "default=noprint_wrappers=1:nokey=1", file],
+      { timeout: 10000 },
+    );
+    const s = parseFloat(res.stdout?.toString().trim());
+    return Number.isFinite(s) && s > 0 ? s : null;
+  } catch {
+    return null;
+  }
+}
+
 if (!resolved.version) {
   logger.warn("ffmpeg not found — video downloads will fail until it is installed", {
     bin: FFMPEG_BIN,
@@ -66,13 +104,21 @@ if (!resolved.version) {
 // MPEG layer-2 audio (always built into ffmpeg, unlike libmp3lame) scaled to
 // fit the 320×240 screen, fps capped at 30 so decode stays smooth on the old
 // hardware.
-export async function convertForIpod(input, output, meta = {}) {
+export async function convertForIpod(input, output, meta = {}, onProgress = null) {
   const vf =
     "scale=320:240:force_original_aspect_ratio=decrease:force_divisible_by=2,fps=30";
+  const durationUs = onProgress
+    ? (() => {
+        const s = probeDurationSeconds(input);
+        return s ? s * 1_000_000 : null;
+      })()
+    : null;
   const args = [
     "-hide_banner",
     "-nostdin",
     "-loglevel", "error",
+    "-nostats",
+    "-progress", "pipe:1",
     "-y",
     "-i", input,
     "-vf", vf,
@@ -90,7 +136,7 @@ export async function convertForIpod(input, output, meta = {}) {
   args.push("-f", "mpeg", output);
 
   try {
-    await runFfmpeg(args, 30 * 60 * 1000);
+    await runFfmpeg(args, 30 * 60 * 1000, durationUs ? onProgress : null, durationUs);
   } catch (err) {
     throw new Error(`ffmpeg conversion failed: ${err.message}`, { cause: err });
   }
@@ -98,16 +144,26 @@ export async function convertForIpod(input, output, meta = {}) {
 
 // execFile's buffered stderr can't survive a long encode — even at
 // -loglevel error a damaged stream emits thousands of decoder lines. Stream it
-// instead and keep only the tail for diagnostics.
-function runFfmpeg(args, timeoutMs) {
+// instead and keep only the tail for diagnostics. Progress lines land on
+// stdout (-progress pipe:1); out_time_* values are microseconds.
+function runFfmpeg(args, timeoutMs, onProgress, durationUs) {
   return new Promise((resolve, reject) => {
     const child = spawn(FFMPEG_BIN, args, {
-      stdio: ["ignore", "ignore", "pipe"],
+      stdio: ["ignore", "pipe", "pipe"],
       timeout: timeoutMs,
     });
     let stderrTail = "";
     child.stderr.on("data", (chunk) => {
       stderrTail = (stderrTail + chunk.toString()).slice(-STDERR_TAIL_BYTES);
+    });
+    // stdout always carries -progress lines — drain it even without a callback
+    // so the pipe buffer can't fill and stall the encode.
+    child.stdout.on("data", (chunk) => {
+      if (!onProgress || !durationUs) return;
+      for (const line of chunk.toString().split("\n")) {
+        const m = line.match(/^out_time_(?:us|ms)=(\d+)/);
+        if (m) onProgress(Math.min(100, (parseInt(m[1], 10) / durationUs) * 100));
+      }
     });
     child.on("error", reject);
     child.on("close", (code, signal) => {

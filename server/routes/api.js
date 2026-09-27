@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import axios from "axios";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
+import { getProgress } from "../downloadProgress.js";
 import {
   verifyPin,
   createRequest,
@@ -461,12 +462,23 @@ router.post("/requests", authenticateSession, async (req, res) => {
   }
 });
 
+// Attach live download progress (in-memory map, fed by the downloader) to any
+// row still downloading — fresh page loads and poll fallback see the same
+// numbers the SSE 'progress' events push.
+function withDownloadProgress(rows) {
+  return rows.map((r) =>
+    r.status === "downloading"
+      ? { ...r, downloadProgress: getProgress(r.id) }
+      : r,
+  );
+}
+
 router.get("/requests", authenticateSession, (req, res) => {
   try {
     if (req.user.role === "parent") {
-      res.json(getAllRequests());
+      res.json(withDownloadProgress(getAllRequests()));
     } else {
-      res.json(getRequestsByProfile(req.user.profile));
+      res.json(withDownloadProgress(getRequestsByProfile(req.user.profile)));
     }
   } catch {
     res.status(500).json({ error: "Failed to fetch requests" });
@@ -1049,8 +1061,10 @@ router.get("/events", (req, res) => {
   res.write("retry: 5000\n\n");
 
   const onChange = (change) => {
-    // Children only hear about their own profile
-    if (user.role !== "parent" && change.request?.profile !== user.profile) return;
+    // Children only hear about their own profile — progress events carry the
+    // profile at top level since they don't ship a full request body.
+    const changeProfile = change.request?.profile ?? change.profile;
+    if (user.role !== "parent" && changeProfile !== user.profile) return;
     res.write(`event: request\ndata: ${JSON.stringify(change)}\n\n`);
   };
   requestEvents.on("change", onChange);
