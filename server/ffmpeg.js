@@ -1,10 +1,9 @@
 import fs from "fs";
-import { execFile, spawnSync } from "child_process";
-import { promisify } from "util";
+import { spawn, spawnSync } from "child_process";
 import logger from "./logger.js";
 
-const run = promisify(execFile);
 const PROBE_TIMEOUT_MS = 5000;
+const STDERR_TAIL_BYTES = 8 * 1024;
 
 function probe(bin) {
   try {
@@ -91,8 +90,31 @@ export async function convertForIpod(input, output, meta = {}) {
   args.push("-f", "mpeg", output);
 
   try {
-    await run(FFMPEG_BIN, args, { timeout: 30 * 60 * 1000 });
+    await runFfmpeg(args, 30 * 60 * 1000);
   } catch (err) {
     throw new Error(`ffmpeg conversion failed: ${err.message}`, { cause: err });
   }
+}
+
+// execFile's buffered stderr can't survive a long encode — even at
+// -loglevel error a damaged stream emits thousands of decoder lines. Stream it
+// instead and keep only the tail for diagnostics.
+function runFfmpeg(args, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(FFMPEG_BIN, args, {
+      stdio: ["ignore", "ignore", "pipe"],
+      timeout: timeoutMs,
+    });
+    let stderrTail = "";
+    child.stderr.on("data", (chunk) => {
+      stderrTail = (stderrTail + chunk.toString()).slice(-STDERR_TAIL_BYTES);
+    });
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
+      if (code === 0) return resolve();
+      const why = signal ? `terminated by ${signal}` : `exit code ${code}`;
+      const tail = stderrTail.trim().split("\n").slice(-4).join("\n").trim();
+      reject(new Error(`ffmpeg ${why}${tail ? ` — ${tail}` : ""}`));
+    });
+  });
 }
