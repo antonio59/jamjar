@@ -959,6 +959,17 @@ function ConfirmStep({
         </ul>
       </div>
 
+      {!isParent && (
+        <div className="flex items-start gap-2 p-3 bg-[var(--warning-soft)] border border-[var(--warning-border)] rounded-[var(--r-md)]">
+          <AlertTriangle className="w-4 h-4 text-[var(--warning)] flex-shrink-0 mt-0.5" />
+          <p className="text-sm text-[var(--text-secondary)]">
+            <span className="font-medium text-[var(--text-primary)]">Grown-up check:</span>{" "}
+            only ask for things your grown-ups would say yes to — they see every
+            request (and its title) before approving it.
+          </p>
+        </div>
+      )}
+
       {duplicateMessage(duplicateInfo, profile) && (
         <div className="flex items-start gap-2 p-3 bg-[var(--warning-soft)] border border-[var(--warning-border)] rounded-[var(--r-md)]">
           <AlertTriangle className="w-4 h-4 text-[var(--warning)] flex-shrink-0 mt-0.5" />
