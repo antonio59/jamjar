@@ -11,10 +11,10 @@ const STEPS = {
     { title: "Mark uploaded in JamJar", body: "Tap \"Mark uploaded\" on the request so it's removed from the Needs Upload list." },
   ],
   ipod: [
-    { title: "Source the audiobook", body: "Buy from Audible / iTunes, rip a CD, or grab an MP3/M4B file." },
-    { title: "Open Apple Music or Finder", body: "macOS Finder syncs the iPod; older devices use iTunes on Windows." },
-    { title: "Drag the files into the iPod", body: "Audiobooks belong under Books → Audiobooks for proper bookmarking." },
-    { title: "Sync the device", body: "Wait for the sync to finish before unplugging." },
+    { title: "Source the audiobook", body: "Buy from Audible / iTunes, rip a CD, or grab an MP3/M4A/M4B file." },
+    { title: "Plug in the iPod", body: "It runs Rockbox now, so it shows up as a normal USB drive called IZZY (File Explorer on Windows, Finder sidebar on a Mac). Don't use iTunes, Finder sync or Apple Devices." },
+    { title: "Make a book folder", body: "Inside Audiobooks, create a folder named \"Author - Title\" and drag the files in (numbered names keep chapters in order). Add the cover as cover.jpg." },
+    { title: "Eject, then unplug", body: "Eject IZZY first. Rockbox remembers the listening position and updates its database on the next start-up." },
     { title: "Mark uploaded in JamJar", body: "Tap \"Mark uploaded\" so this request leaves the queue." },
   ],
 };
