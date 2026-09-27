@@ -6,6 +6,7 @@ import db from '../database.js';
 import { queueStatus } from '../downloadQueue.js';
 import { lastBackup } from '../backup.js';
 import { YTDLP_BIN, YTDLP_VERSION } from '../ytdlp.js';
+import { FFMPEG_BIN, FFMPEG_VERSION } from '../ffmpeg.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const { version } = JSON.parse(
@@ -46,6 +47,7 @@ export function healthDetails() {
     // Which yt-dlp resolved — a stale extractor is the usual reason every
     // download fails at once, so expose it on the parent-only report.
     ytdlp: { bin: YTDLP_BIN, version: YTDLP_VERSION },
+    ffmpeg: { bin: FFMPEG_BIN, version: FFMPEG_VERSION },
   };
 }
 

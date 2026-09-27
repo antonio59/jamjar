@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import {
   Music,
   BookOpen,
+  Film,
   Trash2,
   RotateCcw,
   Download,
@@ -28,6 +29,16 @@ import {
 
 const ACTIVE_STATUSES = new Set(["pending", "approved", "downloading"]);
 const TERMINAL_STATUSES = new Set(["completed", "rejected", "failed"]);
+
+const TYPE_META = {
+  music: { label: "Music", tone: "neutral", icon: Music },
+  video: { label: "Video", tone: "brand", icon: Film },
+  audiobook: { label: "Audiobook", tone: "info", icon: BookOpen },
+};
+
+function typeMeta(type) {
+  return TYPE_META[type] ?? TYPE_META.music;
+}
 
 function profileMeta(profile) {
   if (profile === "yoto") return { tone: "yoto", label: "Yoto", emoji: "📻" };
@@ -73,6 +84,7 @@ export default function RequestRow({
   onShowUploadGuide,
 }) {
   const profile = profileMeta(request.profile);
+  const typeInfo = typeMeta(request.type);
   const isDuplicate = downloadCount > 1 && request.status === "completed";
   const isGenericTitle = looksGeneric(request.title);
   const [busy, setBusy] = useState(null);
@@ -122,11 +134,7 @@ export default function RequestRow({
             />
           ) : (
             <div className="w-12 h-12 rounded-[var(--r-md)] bg-[var(--surface-2)] flex items-center justify-center text-[var(--text-muted)]">
-              {request.type === "audiobook" ? (
-                <BookOpen className="w-5 h-5" />
-              ) : (
-                <Music className="w-5 h-5" />
-              )}
+              <typeInfo.icon className="w-5 h-5" />
             </div>
           )}
         </div>
@@ -153,8 +161,8 @@ export default function RequestRow({
             <Badge tone={profile.tone} size="xs">
               <span aria-hidden>{profile.emoji}</span> {profile.label}
             </Badge>
-            <Badge tone={request.type === "audiobook" ? "info" : "neutral"} size="xs">
-              {request.type === "audiobook" ? "Audiobook" : "Music"}
+            <Badge tone={typeInfo.tone} size="xs">
+              {typeInfo.label}
             </Badge>
             <span className="text-[11px] text-[var(--text-muted)]">
               {formatDate(request.created_at)}
@@ -278,7 +286,7 @@ function RowActions({
     lanes.push(
       <div key="library" className="flex items-center gap-2">
         <DownloadAction request={request} />
-        {isParent && request.type === "music" && (
+        {isParent && request.type !== "audiobook" && (
           <Button
             size="sm"
             variant="ghost"
@@ -295,8 +303,8 @@ function RowActions({
     );
   }
 
-  // Recovery — retry failed music
-  if (isParent && request.status === "failed" && request.type === "music") {
+  // Recovery — retry failed downloads (music and video both come from yt-dlp)
+  if (isParent && request.status === "failed" && request.type !== "audiobook") {
     lanes.push(
       <Button
         key="recovery"
@@ -393,25 +401,29 @@ function LifecycleAction({ request, onDelete }) {
   );
 }
 
-/* ─── Mini Player — signed-URL streaming with range support ──────────────── */
+/* ─── Mini Player — signed-URL streaming with range support.
+     Renders <video> for video requests so the dashboard previews the picture,
+     not just the soundtrack. Both elements share the same play/pause API.  ─── */
 function MiniPlayer({ request, className = "" }) {
   const getAccessToken = useStore((s) => s.getAccessToken);
   const [state, setState] = useState("idle"); // idle | loading | playing | paused | error
   const [error, setError] = useState(null);
-  const audioRef = useRef(null);
+  const mediaRef = useRef(null);
   const loadedRef = useRef(false);
 
+  const isVideo = request.type === "video";
+  const MediaTag = isVideo ? "video" : "audio";
   const streamUrl = request.file_path?.replace("/api/downloads/", "/api/stream/");
 
   const handleToggle = async () => {
     if (state === "loading") return;
 
-    if (audioRef.current && loadedRef.current) {
-      if (audioRef.current.paused) {
-        await audioRef.current.play().catch(() => {});
+    if (mediaRef.current && loadedRef.current) {
+      if (mediaRef.current.paused) {
+        await mediaRef.current.play().catch(() => {});
         setState("playing");
       } else {
-        audioRef.current.pause();
+        mediaRef.current.pause();
         setState("paused");
       }
       return;
@@ -420,15 +432,15 @@ function MiniPlayer({ request, className = "" }) {
     setState("loading");
     setError(null);
     try {
-      // Mints the jj_media cookie the <audio> element authenticates with —
+      // Mints the jj_media cookie the media element authenticates with —
       // keeps the token out of URLs and proxy access logs.
       const token = await getAccessToken();
       if (!token) throw new Error("Session expired — log in again");
-      if (audioRef.current) {
-        audioRef.current.src = streamUrl;
-        audioRef.current.load();
+      if (mediaRef.current) {
+        mediaRef.current.src = streamUrl;
+        mediaRef.current.load();
         loadedRef.current = true;
-        await audioRef.current.play().catch(() => {});
+        await mediaRef.current.play().catch(() => {});
       }
       setState("playing");
     } catch (e) {
@@ -439,7 +451,7 @@ function MiniPlayer({ request, className = "" }) {
   };
 
   return (
-    <div className={cx("flex items-center gap-2", className)}>
+    <div className={cx("flex items-center gap-2", className, isVideo && "flex-col items-start")}>
       <Button
         size="xs"
         variant="secondary"
@@ -451,8 +463,8 @@ function MiniPlayer({ request, className = "" }) {
       >
         {state === "playing" ? "Pause" : state === "paused" ? "Resume" : "Preview"}
       </Button>
-      <audio
-        ref={audioRef}
+      <MediaTag
+        ref={mediaRef}
         controls
         preload="none"
         onError={() => {
@@ -465,10 +477,13 @@ function MiniPlayer({ request, className = "" }) {
         onPause={() => state === "playing" && setState("paused")}
         onPlay={() => setState("playing")}
         className={cx(
-          "h-8 transition-all",
+          "transition-all",
+          isVideo ? "rounded-[var(--r-md)]" : "h-8",
           state === "idle" || state === "loading"
-            ? "w-0 overflow-hidden opacity-0 pointer-events-none"
-            : "w-full max-w-xs",
+            ? "w-0 h-0 overflow-hidden opacity-0 pointer-events-none"
+            : isVideo
+              ? "w-full max-w-sm max-h-44 bg-black"
+              : "w-full max-w-xs",
         )}
       />
       {error && <span className="text-xs text-[var(--danger)]">{error}</span>}
@@ -488,6 +503,10 @@ function DownloadAction({ request }) {
   const defaultName = sanitizeFilename(request.title) || "song";
   const [filename, setFilename] = useState(defaultName);
   const [downloading, setDownloading] = useState(false);
+
+  // Extension follows the stored file — .mpg for videos, .mp3 for audio.
+  const fileExt =
+    request.file_path?.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() || "mp3";
 
   const openDialog = () => {
     setFilename(defaultName);
@@ -509,7 +528,7 @@ function DownloadAction({ request }) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${safeName}.mp3`;
+      a.download = `${safeName}.${fileExt}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -539,7 +558,11 @@ function DownloadAction({ request }) {
         onConfirm={handleDownload}
         loading={downloading}
         title="Download as"
-        description="Pick a filename for your saved copy. The file is downloaded as MP3."
+        description={
+          fileExt === "mpg"
+            ? "Pick a filename for your saved copy. Video files come down as .mpg — drop them on the iPod and play via Rockbox's mpegplayer."
+            : `Pick a filename for your saved copy. The file is downloaded as .${fileExt}.`
+        }
         confirmLabel="Save file"
         variant="primary"
       >
@@ -559,7 +582,7 @@ function DownloadAction({ request }) {
               aria-label="Filename"
             />
             <span className="text-sm text-[var(--text-muted)] tabular-nums select-none">
-              .mp3
+              .{fileExt}
             </span>
           </div>
           {error && (

@@ -11,6 +11,7 @@ import {
   X,
   Music,
   BookOpen,
+  Film,
   ChevronLeft,
   ChevronRight,
   Sparkles,
@@ -192,6 +193,8 @@ export default function QuickApproveDrawer({
                 <div className="w-28 h-28 rounded-[var(--r-lg)] bg-[var(--surface-2)] flex items-center justify-center text-[var(--text-muted)]">
                   {current.type === "audiobook" ? (
                     <BookOpen className="w-10 h-10" />
+                  ) : current.type === "video" ? (
+                    <Film className="w-10 h-10" />
                   ) : (
                     <Music className="w-10 h-10" />
                   )}
@@ -207,10 +210,20 @@ export default function QuickApproveDrawer({
                   {current.profile === "yoto" ? "📻 Yoto" : "🎧 iPod"}
                 </Badge>
                 <Badge
-                  tone={current.type === "audiobook" ? "info" : "neutral"}
+                  tone={
+                    current.type === "audiobook"
+                      ? "info"
+                      : current.type === "video"
+                        ? "brand"
+                        : "neutral"
+                  }
                   size="xs"
                 >
-                  {current.type === "audiobook" ? "Audiobook" : "Music"}
+                  {current.type === "audiobook"
+                    ? "Audiobook"
+                    : current.type === "video"
+                      ? "Video"
+                      : "Music"}
                 </Badge>
               </div>
 

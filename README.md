@@ -7,6 +7,7 @@ Full-stack family music request app with Express, SQLite, and React.
 - Parent approval dashboard with Tinder-style swipe UI
 - YouTube search with safe filtering + playlist support
 - yt-dlp download pipeline
+- Video requests for the iPod — downloaded then converted to Rockbox-playable MPEG (`.mpg`, 320×240 MPEG-2 + MP2) via ffmpeg
 - Real-time request tracking
 - Blocked keywords for content safety
 - Clean-version-only music: explicit/age-restricted results are filtered out and labelled clean edits ranked first
@@ -55,12 +56,15 @@ ACCESS_TOKEN_TTL=300
 ALLOWED_ORIGIN=https://your-domain.example
 YTDLP_PATH=/usr/local/bin/yt-dlp   # optional — newest working binary is auto-detected
 YTDLP_COOKIES_FILE=./cookies.txt
+FFMPEG_PATH=/opt/homebrew/bin/ffmpeg  # optional — for video→Rockbox MPEG conversion
 TYPESAFE_API_KEY=                  # optional — AI clean-version check via TypeSafe (Jev)
 TYPESAFE_CLEAN_THRESHOLD=0.5       # optional — noul probability floor for unlabelled tracks
 ```
 
 Files are named `Artist - Title.mp3` (numbered on collision) and tagged via
-ID3, so libraries stay tidy on both iPod and Yoto. Tracks are deduplicated on a
+ID3, so libraries stay tidy on both iPod and Yoto. Video requests (iPod only)
+land as `Artist - Title.mpg` — MPEG-2 at 320×240, the format Rockbox's
+mpegplayer plugin reads; drop them anywhere on the iPod drive to play. Tracks are deduplicated on a
 canonical key — the same recording under different upload labels
 ("(Official Video)", "(Clean)", "Radio Edit") counts as one track per device;
 a repeat request on the same device reuses the existing file instead of

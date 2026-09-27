@@ -24,7 +24,7 @@ sudo bash deploy-vps.sh
 ```
 
 The script will:
-- Install Node.js, Nginx, yt-dlp, Certbot
+- Install Node.js, Nginx, yt-dlp, ffmpeg, Certbot
 - Clone the repo to `/opt/jamjar`
 - Set up systemd service
 - Configure Nginx reverse proxy

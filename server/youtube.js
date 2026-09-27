@@ -112,7 +112,7 @@ async function youtubeApiSearch(query, type) {
       type: 'video',
       maxResults: 10,
       safeSearch: 'strict',
-      videoDuration: type === 'music' ? 'short' : 'long',
+      videoDuration: { music: 'short', video: 'any' }[type] || 'long',
       key: YOUTUBE_API_KEY,
     },
   });
@@ -148,9 +148,11 @@ async function youtubeApiSearch(query, type) {
 // Regex labels handle labelled explicit/clean cuts; Jev then judges the
 // unlabelled middle ground. Results with real evidence of explicit content are
 // dropped; unscored results pass through — silence isn't evidence. Skipped
-// entirely for parents browsing explicit results and for audiobooks.
+// entirely for parents browsing explicit results, audiobooks, and videos —
+// Jev answers "is this the clean cut of the song", which means nothing for a
+// cartoon or a read-aloud.
 async function refineWithTypesafe(results, query, { allowExplicit, type }) {
-  if (allowExplicit || type === 'audiobook' || !typesafeEnabled() || results.length === 0) {
+  if (allowExplicit || type !== 'music' || !typesafeEnabled() || results.length === 0) {
     return results;
   }
   const scores = await judgeCleanVersions(query, results);
@@ -232,7 +234,7 @@ export async function searchYouTube(query, type = 'music', { allowExplicit = fal
   }
   
   // Fall back to mock data
-  const mockResults = type === 'music' ? mockMusicResults : mockAudiobookResults;
+  const mockResults = type === 'audiobook' ? mockAudiobookResults : mockMusicResults;
   return refineWithTypesafe(
     applyCleanFilter(
       mockResults.filter(r => r.title.toLowerCase().includes(query.toLowerCase())),

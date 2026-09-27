@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { updateRequestStatus, findCompletedTrackFile } from "./database.js";
 import { createYtDlp, baseArgs, YTDLP_BIN } from "./ytdlp.js";
+import { convertForIpod } from "./ffmpeg.js";
 import {
   cleanBaseName,
   normalizeTitle,
@@ -36,15 +37,119 @@ function metadataArgs(request) {
   return args.join(" ");
 }
 
+function requestTags(request) {
+  const cleaned = normalizeTitle(request.title, request.title || "");
+  const { artist, trackTitle } = splitArtistTitle(cleaned);
+  return {
+    title: tagSafe(trackTitle || cleaned),
+    artist: tagSafe(request.artist || artist),
+  };
+}
+
+async function downloadAudio(request, outputDir, fileName, isYoto) {
+  const outputFile = path.join(
+    outputDir,
+    fileName.replace(/\.mp3$/, ".%(ext)s"),
+  );
+
+  const ytDlp = createYtDlp();
+
+  // Build CLI args array — yt-dlp-wrap.exec() takes string[], not an options object
+  const args = [
+    request.url,
+    "-f", "bestaudio/best",
+    "-x",
+    "--audio-format", "mp3",
+    "--audio-quality", isYoto ? "5" : "0",
+    "-o", outputFile,
+    "--no-playlist",
+    ...baseArgs(),
+  ];
+
+  const meta = metadataArgs(request);
+  if (isYoto) {
+    // CBR 128kbps, 44.1kHz stereo, clean ID3v2.3 tags — Yoto player compatibility
+    args.push(
+      "--postprocessor-args",
+      `ffmpeg:-b:a 128k -ar 44100 -ac 2 -id3v2_version 3 -write_id3v1 1 ${meta}`,
+    );
+  } else {
+    args.push("--embed-thumbnail", "--postprocessor-args", `ffmpeg:${meta}`);
+  }
+
+  logger.info("yt-dlp invoked", { bin: YTDLP_BIN, url: request.url });
+  await ytDlp.execPromise(args);
+}
+
+// Video requests land on the iPod as MPEG-2 .mpg — the only thing Rockbox's
+// mpegplayer reads. yt-dlp grabs a source file (prefer ≤720p/≤30fps — plenty
+// for a 320×240 screen and keeps the transcode quick), then ffmpeg converts it.
+async function downloadVideo(request, outputDir, fileName) {
+  const srcBase = fileName.replace(/\.mpg$/, "");
+  const srcPattern = path.join(outputDir, `${srcBase}.src.%(ext)s`);
+
+  // Clear any source leftover from a crashed earlier attempt so the lookup
+  // below can't pick a stale container over the fresh download.
+  for (const f of fs.readdirSync(outputDir)) {
+    if (f.startsWith(`${srcBase}.src.`)) {
+      try {
+        fs.unlinkSync(path.join(outputDir, f));
+      } catch {}
+    }
+  }
+
+  const ytDlp = createYtDlp();
+  const args = [
+    request.url,
+    "-f", "bv*[height<=720][fps<=30]+ba/b[height<=720][fps<=30]/bv*[height<=720]+ba/b[height<=720]/b",
+    "-o", srcPattern,
+    "--no-playlist",
+    ...baseArgs(),
+  ];
+
+  logger.info("yt-dlp invoked (video)", { bin: YTDLP_BIN, url: request.url });
+  await ytDlp.execPromise(args);
+
+  // yt-dlp resolves %(ext)s itself — find whatever container it landed in
+  const srcName = fs
+    .readdirSync(outputDir)
+    .find((f) => f.startsWith(`${srcBase}.src.`));
+  if (!srcName) {
+    throw new Error("Downloaded video source not found after yt-dlp completed");
+  }
+  const srcPath = path.join(outputDir, srcName);
+
+  try {
+    logger.info("converting video for iPod", { requestId: request.id });
+    await convertForIpod(
+      srcPath,
+      path.join(outputDir, fileName),
+      requestTags(request),
+    );
+  } finally {
+    try {
+      fs.unlinkSync(srcPath);
+    } catch {}
+  }
+}
+
 export async function downloadAndUpload(request) {
   try {
     updateRequestStatus(request.id, "downloading");
     logger.info("download started", { requestId: request.id, title: request.title });
 
+    const isVideo = request.type === "video";
+    const isYoto = request.profile === "yoto";
+
     // Same track already in this device's library → point at the existing file
     // instead of downloading a second copy. Cross-device dupes still download —
-    // yoto (128k CBR) and ipod (best quality) are different encodings.
-    const sibling = findCompletedTrackFile(request.track_key, request.profile);
+    // yoto (128k CBR) and ipod (best quality) are different encodings, and a
+    // music MP3 can't stand in for a video request (type is part of the match).
+    const sibling = findCompletedTrackFile(
+      request.track_key,
+      request.profile,
+      request.type,
+    );
     if (sibling?.file_path) {
       const siblingPath = path.join(
         DOWNLOAD_DIR,
@@ -62,43 +167,19 @@ export async function downloadAndUpload(request) {
       }
     }
 
-    const outputDir = request.profile === "yoto" ? yotoDir : ipodDir;
-    // Library naming: "Artist - Title.mp3", numbered on collision.
-    const fileName = uniqueFileName(outputDir, cleanBaseName(request.title));
-    const outputFile = path.join(
+    const outputDir = isYoto ? yotoDir : ipodDir;
+    // Library naming: "Artist - Title.<ext>", numbered on collision.
+    const fileName = uniqueFileName(
       outputDir,
-      fileName.replace(/\.mp3$/, ".%(ext)s"),
+      cleanBaseName(request.title),
+      isVideo ? "mpg" : "mp3",
     );
 
-    const isYoto = request.profile === "yoto";
-
-    const ytDlp = createYtDlp();
-
-    // Build CLI args array — yt-dlp-wrap.exec() takes string[], not an options object
-    const args = [
-      request.url,
-      "-f", "bestaudio/best",
-      "-x",
-      "--audio-format", "mp3",
-      "--audio-quality", isYoto ? "5" : "0",
-      "-o", outputFile,
-      "--no-playlist",
-      ...baseArgs(),
-    ];
-
-    const meta = metadataArgs(request);
-    if (isYoto) {
-      // CBR 128kbps, 44.1kHz stereo, clean ID3v2.3 tags — Yoto player compatibility
-      args.push(
-        "--postprocessor-args",
-        `ffmpeg:-b:a 128k -ar 44100 -ac 2 -id3v2_version 3 -write_id3v1 1 ${meta}`,
-      );
+    if (isVideo) {
+      await downloadVideo(request, outputDir, fileName);
     } else {
-      args.push("--embed-thumbnail", "--postprocessor-args", `ffmpeg:${meta}`);
+      await downloadAudio(request, outputDir, fileName, isYoto);
     }
-
-    logger.info("yt-dlp invoked", { bin: YTDLP_BIN, url: request.url });
-    await ytDlp.execPromise(args);
 
     // We chose the name up front — verify it rather than guessing from a listing
     const filePath = path.join(outputDir, fileName);

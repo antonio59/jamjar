@@ -47,7 +47,7 @@ db.exec(`
     profile TEXT NOT NULL CHECK(profile IN ('yoto', 'ipod')),
     title TEXT NOT NULL,
     url TEXT,
-    type TEXT NOT NULL CHECK(type IN ('music', 'audiobook')),
+    type TEXT NOT NULL CHECK(type IN ('music', 'audiobook', 'video')),
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'downloading', 'completed', 'failed')),
     search_query TEXT NOT NULL,
     thumbnail TEXT,
@@ -145,6 +145,67 @@ const migrations = [
       const rows = db.prepare('SELECT id, title FROM requests WHERE track_key IS NULL').all();
       const update = db.prepare('UPDATE requests SET track_key = ? WHERE id = ?');
       for (const r of rows) update.run(trackKey(r.title), r.id);
+    },
+  },
+  {
+    version: 6,
+    up() {
+      // 'video' requests download through the same pipeline as music but land
+      // as Rockbox-playable .mpg files. SQLite can't edit a CHECK constraint,
+      // so the requests table is rebuilt in place.
+      const row = db
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'requests'")
+        .get();
+      if (!row || row.sql.includes("'video'")) return;
+      const allCols = [
+        'id', 'user_id', 'profile', 'title', 'url', 'type', 'status',
+        'search_query', 'thumbnail', 'duration', 'approved_by', 'approved_at',
+        'rejected_reason', 'downloaded_at', 'file_path', 'file_size_bytes',
+        'error_message', 'created_at', 'updated_at', 'artist', 'track_key',
+      ];
+      const existing = new Set(
+        db.prepare('PRAGMA table_info(requests)').all().map((c) => c.name)
+      );
+      const copyCols = allCols.filter((c) => existing.has(c)).join(', ');
+      db.transaction(() => {
+        db.exec(`
+          CREATE TABLE requests_new (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            profile TEXT NOT NULL CHECK(profile IN ('yoto', 'ipod')),
+            title TEXT NOT NULL,
+            url TEXT,
+            type TEXT NOT NULL CHECK(type IN ('music', 'audiobook', 'video')),
+            status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'downloading', 'completed', 'failed')),
+            search_query TEXT NOT NULL,
+            thumbnail TEXT,
+            duration TEXT,
+            approved_by TEXT,
+            approved_at DATETIME,
+            rejected_reason TEXT,
+            downloaded_at DATETIME,
+            file_path TEXT,
+            file_size_bytes INTEGER,
+            error_message TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            artist TEXT,
+            track_key TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (approved_by) REFERENCES users(id)
+          );
+          INSERT INTO requests_new (${copyCols})
+            SELECT ${copyCols} FROM requests;
+          DROP TABLE requests;
+          ALTER TABLE requests_new RENAME TO requests;
+          CREATE INDEX idx_requests_status ON requests(status);
+          CREATE INDEX idx_requests_profile ON requests(profile);
+          CREATE INDEX idx_requests_created ON requests(created_at);
+          CREATE INDEX idx_requests_title ON requests(title);
+          CREATE INDEX idx_requests_artist ON requests(artist);
+          CREATE INDEX idx_requests_track_key ON requests(track_key);
+        `);
+      })();
     },
   },
 ];
@@ -288,15 +349,18 @@ export function getRequestsByProfile(profile) {
 // Per-device duplicate picture for a track key: completed copies on each
 // profile plus same-profile requests still in flight (pending → downloading),
 // so a second identical request is visible before the first one even lands.
-export function getDuplicateInfo(key, profile, excludeId = null) {
+// When a request type is given, only same-type rows count — the MP3 of a song
+// doesn't make its music video a duplicate.
+export function getDuplicateInfo(key, profile, excludeId = null, type = null) {
   const empty = { count: 0, sameProfile: 0, otherProfile: 0, inFlight: 0 };
   if (!key) return empty;
   const rows = db.prepare(
-    `SELECT id, profile, status FROM requests WHERE track_key = ?`
+    `SELECT id, profile, status, type FROM requests WHERE track_key = ?`
   ).all(key);
   const info = { ...empty };
   for (const r of rows) {
     if (r.id === excludeId) continue;
+    if (type && r.type !== type) continue;
     if (r.status === 'completed') {
       if (r.profile === profile) info.sameProfile += 1;
       else info.otherProfile += 1;
@@ -311,15 +375,17 @@ export function getDuplicateInfo(key, profile, excludeId = null) {
   return info;
 }
 
-// Newest completed sibling on the same device — the downloader points repeat
-// requests at this file instead of downloading a second copy.
-export function findCompletedTrackFile(key, profile) {
+// Newest completed sibling of the same type on this device — the downloader
+// points repeat requests at this file instead of downloading a second copy.
+// Type matters: a video request mustn't be satisfied by the same track's MP3.
+export function findCompletedTrackFile(key, profile, type = null) {
   if (!key) return null;
   return db.prepare(
     `SELECT file_path, file_size_bytes FROM requests
      WHERE track_key = ? AND profile = ? AND status = 'completed' AND file_path IS NOT NULL
+       AND (? IS NULL OR type = ?)
      ORDER BY downloaded_at DESC LIMIT 1`
-  ).get(key, profile) ?? null;
+  ).get(key, profile, type, type) ?? null;
 }
 
 // Returns list of distinct artists from completed requests
@@ -414,6 +480,7 @@ export function getAnalytics() {
 
   const musicCount = db.prepare("SELECT COUNT(*) as count FROM requests WHERE type = 'music'").get().count;
   const audiobookCount = db.prepare("SELECT COUNT(*) as count FROM requests WHERE type = 'audiobook'").get().count;
+  const videoCount = db.prepare("SELECT COUNT(*) as count FROM requests WHERE type = 'video'").get().count;
 
   // Outcome-driven counts the dashboard surfaces
   const needsUpload = db.prepare(
@@ -487,7 +554,7 @@ export function getAnalytics() {
     completedLastWeek,
     avgCompletionSeconds,
     byProfile: { yoto: yotoCount, ipod: ipodCount },
-    byType: { music: musicCount, audiobook: audiobookCount },
+    byType: { music: musicCount, audiobook: audiobookCount, video: videoCount },
     requestsByDay,
     topArtists,
     topRequested,

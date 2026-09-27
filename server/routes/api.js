@@ -361,6 +361,21 @@ router.post("/requests", authenticateSession, async (req, res) => {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
+    if (!["music", "audiobook", "video"].includes(type)) {
+      return res.status(400).json({ error: "Invalid type" });
+    }
+
+    // Videos only make sense for the iPod — the Yoto has no screen — and can't
+    // be sourced by hand like an audiobook, so a YouTube link is mandatory.
+    if (type === "video") {
+      if (profile !== "ipod") {
+        return res.status(400).json({ error: "Videos can only go to the iPod" });
+      }
+      if (!url) {
+        return res.status(400).json({ error: "Video requests need a YouTube link" });
+      }
+    }
+
     const cleanedTitle = cleanTitle(title);
 
     // Extract artist from "Artist - Title" format
@@ -437,7 +452,7 @@ router.post("/requests", authenticateSession, async (req, res) => {
     // being reported on, not a duplicate.
     res.json({
       ...request,
-      duplicates: getDuplicateInfo(request.track_key, profile, request.id),
+      duplicates: getDuplicateInfo(request.track_key, profile, request.id, type),
     });
   } catch {
     res.status(500).json({ error: "Failed to create request" });
@@ -642,10 +657,13 @@ router.get("/requests/check-duplicate", authenticateSession, (req, res) => {
     const profile = ["yoto", "ipod"].includes(req.query.profile)
       ? req.query.profile
       : req.user.profile;
+    const type = ["music", "audiobook", "video"].includes(req.query.type)
+      ? req.query.type
+      : null;
     if (!title || !profile) {
       return res.json({ count: 0, sameProfile: 0, otherProfile: 0, inFlight: 0 });
     }
-    res.json(getDuplicateInfo(trackKey(title), profile));
+    res.json(getDuplicateInfo(trackKey(title), profile, null, type));
   } catch {
     res.status(500).json({ error: "Failed to check duplicate" });
   }
@@ -923,7 +941,17 @@ router.get("/events", (req, res) => {
   });
 });
 
-// Audio stream — session header or signed token, range request support
+// Media stream — session header or signed token, range request support.
+// Content-Type follows the stored file so video requests preview as video.
+const STREAM_TYPES = {
+  mp3: "audio/mpeg",
+  m4a: "audio/mp4",
+  m4b: "audio/mp4",
+  mp4: "video/mp4",
+  m4v: "video/mp4",
+  mpg: "video/mpeg",
+  mpeg: "video/mpeg",
+};
 router.get("/stream/:profile/:filename", (req, res) => {
   const session = resolveUser(req);
   if (!session) return res.status(401).json({ error: "Not authenticated" });
@@ -958,6 +986,9 @@ router.get("/stream/:profile/:filename", (req, res) => {
 
   const stat = fs.statSync(filePath);
   const range = req.headers.range;
+  const contentType =
+    STREAM_TYPES[path.extname(safeName).slice(1).toLowerCase()] ??
+    "application/octet-stream";
 
   if (range) {
     const [startStr, endStr] = range.replace(/bytes=/, "").split("-");
@@ -977,13 +1008,13 @@ router.get("/stream/:profile/:filename", (req, res) => {
       "Content-Range": `bytes ${start}-${end}/${stat.size}`,
       "Accept-Ranges": "bytes",
       "Content-Length": chunksize,
-      "Content-Type": "audio/mpeg",
+      "Content-Type": contentType,
     });
     fs.createReadStream(filePath, { start, end }).pipe(res);
   } else {
     res.writeHead(200, {
       "Content-Length": stat.size,
-      "Content-Type": "audio/mpeg",
+      "Content-Type": contentType,
       "Accept-Ranges": "bytes",
     });
     fs.createReadStream(filePath).pipe(res);

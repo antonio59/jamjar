@@ -505,6 +505,100 @@ describe('duplicate tracking', () => {
   });
 });
 
+describe('video requests', () => {
+  it('rejects video for the Yoto and video without a URL', async () => {
+    const yoto = await request(app)
+      .post('/api/requests')
+      .set('X-Session-Id', childSession)
+      .send({
+        profile: 'yoto',
+        title: 'A Video',
+        url: 'https://www.youtube.com/watch?v=ZbZSe6N_BXs',
+        type: 'video',
+        searchQuery: 'a video',
+      });
+    expect(yoto.status).toBe(400);
+
+    const noUrl = await request(app)
+      .post('/api/requests')
+      .set('X-Session-Id', parentSession)
+      .send({
+        profile: 'ipod',
+        title: 'A Video',
+        type: 'video',
+        searchQuery: 'a video',
+      });
+    expect(noUrl.status).toBe(400);
+  });
+
+  it('accepts an iPod video request and queues the download', async () => {
+    const res = await request(app)
+      .post('/api/requests')
+      .set('X-Session-Id', parentSession)
+      .send({
+        profile: 'ipod',
+        title: 'Cool Video',
+        url: 'https://www.youtube.com/watch?v=ZbZSe6N_BXs',
+        type: 'video',
+        searchQuery: 'cool video',
+        direct: true,
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.type).toBe('video');
+    expect(res.body.status).toBe('approved');
+
+    const { downloadAndUpload } = await import('../server/downloader.js');
+    expect(downloadAndUpload).toHaveBeenCalled();
+  });
+
+  it('streams .mpg with a video content type and ranges', async () => {
+    const dir = path.join(process.env.DOWNLOAD_DIR, 'ipod');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'clip.mpg'), 'videobytes-here');
+
+    const full = await request(app)
+      .get('/api/stream/ipod/clip.mpg')
+      .set('X-Session-Id', parentSession);
+    expect(full.status).toBe(200);
+    expect(full.headers['content-type']).toBe('video/mpeg');
+
+    const ranged = await request(app)
+      .get('/api/stream/ipod/clip.mpg')
+      .set('X-Session-Id', parentSession)
+      .set('Range', 'bytes=0-4');
+    expect(ranged.status).toBe(206);
+    expect(ranged.headers['content-type']).toBe('video/mpeg');
+  });
+
+  it("doesn't count a music MP3 as a duplicate of a video request", async () => {
+    const music = await request(app)
+      .post('/api/requests')
+      .set('X-Session-Id', parentSession)
+      .send({
+        profile: 'ipod',
+        title: 'Same Song',
+        url: 'https://www.youtube.com/watch?v=ZbZSe6N_BXs',
+        type: 'music',
+        searchQuery: 'same song',
+      });
+    db.prepare(
+      "UPDATE requests SET status = 'completed', file_path = '/api/downloads/ipod/Same Song.mp3' WHERE id = ?",
+    ).run(music.body.id);
+
+    const videoDup = await request(app)
+      .get('/api/requests/check-duplicate')
+      .query({ title: 'Same Song', profile: 'ipod', type: 'video' })
+      .set('X-Session-Id', parentSession);
+    expect(videoDup.body.count).toBe(0);
+
+    const musicDup = await request(app)
+      .get('/api/requests/check-duplicate')
+      .query({ title: 'Same Song', profile: 'ipod', type: 'music' })
+      .set('X-Session-Id', parentSession);
+    expect(musicDup.body.sameProfile).toBe(1);
+  });
+});
+
 describe('clean gate (typesafe)', () => {
   it('rejects music Jev scores below threshold, passes above', async () => {
     process.env.TYPESAFE_API_KEY = 'test-key';

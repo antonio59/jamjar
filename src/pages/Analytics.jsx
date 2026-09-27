@@ -8,6 +8,7 @@ import {
   TrendingDown,
   Music,
   Book,
+  Film,
   Users,
 } from "lucide-react";
 import {
@@ -164,6 +165,11 @@ export default function Analytics() {
                 color: "var(--brand)",
               },
               {
+                label: <span className="inline-flex items-center gap-1.5"><Film className="w-3.5 h-3.5" />Video</span>,
+                value: data.byType.video ?? 0,
+                color: "var(--warning)",
+              },
+              {
                 label: <span className="inline-flex items-center gap-1.5"><Book className="w-3.5 h-3.5" />Audiobook</span>,
                 value: data.byType.audiobook,
                 color: "var(--info)",
@@ -260,7 +266,11 @@ export default function Analytics() {
                     <StatusBadge status={r.status} />
                     <span className="text-[11px] text-[var(--text-muted)]">
                       {r.profile === "yoto" ? "📻 Yoto" : "🎧 iPod"} ·{" "}
-                      {r.type === "audiobook" ? "Audiobook" : "Music"}
+                      {r.type === "audiobook"
+                        ? "Audiobook"
+                        : r.type === "video"
+                          ? "Video"
+                          : "Music"}
                     </span>
                   </div>
                 </div>

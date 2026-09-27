@@ -158,6 +158,7 @@ export default function LibraryView({
             options={[
               { value: "all", label: "All" },
               { value: "music", label: "Music" },
+              { value: "video", label: "Video" },
               { value: "audiobook", label: "Audiobook" },
             ]}
           />

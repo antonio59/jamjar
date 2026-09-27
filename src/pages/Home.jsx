@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Music,
   Book,
+  Film,
   Search,
   Link as LinkIcon,
   CheckCircle,
@@ -39,8 +40,12 @@ const PROFILE_OPTIONS = [
 
 const TYPE_OPTIONS = [
   { value: "music", label: "Music", icon: <Music className="w-4 h-4" /> },
+  { value: "video", label: "Video", icon: <Film className="w-4 h-4" /> },
   { value: "audiobook", label: "Audiobook", icon: <Book className="w-4 h-4" /> },
 ];
+
+// Labels the dashboard uses too — one map keeps them in sync.
+const TYPE_LABELS = { music: "Music", video: "Video", audiobook: "Audiobook" };
 
 const SOURCE_OPTIONS = [
   { value: "search", label: "Search", icon: <Search className="w-4 h-4" /> },
@@ -101,13 +106,17 @@ export default function Home() {
   // effect only fetches for a newly selected track
   useEffect(() => {
     if (!selectedTrack) return;
-    checkDuplicate(selectedTrack.title, profile).then(setDuplicateInfo);
-  }, [selectedTrack, profile, checkDuplicate]);
+    checkDuplicate(selectedTrack.title, profile, type).then(setDuplicateInfo);
+  }, [selectedTrack, profile, type, checkDuplicate]);
 
   // ── Step navigation ──────────────────────────────────────────────────────
   const steps = useMemo(() => {
     const base = [
-      { id: "type", label: "Type", hint: "Music or audiobook" },
+      {
+        id: "type",
+        label: "Type",
+        hint: profile === "ipod" ? "Music, video or audiobook" : "Music or audiobook",
+      },
       { id: "source", label: "Find content", hint: type === "audiobook" ? "Search Open Library" : "Search or paste link" },
       { id: "confirm", label: "Confirm", hint: "Review and send" },
     ];
@@ -118,7 +127,7 @@ export default function Home() {
       ];
     }
     return base;
-  }, [isParent, type]);
+  }, [isParent, type, profile]);
 
   const stepIdx = step; // already 0-based
   const canAdvance = () => {
@@ -147,7 +156,7 @@ export default function Home() {
       return;
     }
     setSearching(true);
-    const fn = type === "audiobook" ? searchBooks : (qq) => search(qq, "music");
+    const fn = type === "audiobook" ? searchBooks : (qq) => search(qq, type);
     const r = await fn(q);
     setResults(r || []);
     setSearchedOnce(true);
@@ -191,13 +200,13 @@ export default function Home() {
 
   // ── Submit ────────────────────────────────────────────────────────────────
   const buildPayload = () => {
-    if (type === "music") {
+    if (type !== "audiobook") {
       if (source === "search" && selectedTrack) {
         return {
           profile,
           title: selectedTrack.title,
           url: selectedTrack.url,
-          type: "music",
+          type,
           searchQuery: query,
           thumbnail: selectedTrack.thumbnail,
           duration: selectedTrack.duration,
@@ -209,7 +218,7 @@ export default function Home() {
           profile,
           title: urlTitle.trim() || urlPreview?.title || "Untitled YouTube track",
           url: urlInput,
-          type: "music",
+          type,
           searchQuery: urlInput,
           thumbnail: urlPreview?.thumbnail || "",
           duration: urlPreview?.duration || "Unknown",
@@ -243,7 +252,9 @@ export default function Home() {
         isParent
           ? type === "audiobook"
             ? "Audiobook queued — upload the file when you're ready."
-            : "Added — downloading now."
+            : type === "video"
+              ? "Added — downloading and converting for the iPod."
+              : "Added — downloading now."
           : "Request sent — a grown-up will review it soon.",
         "success",
       );
@@ -307,11 +318,20 @@ export default function Home() {
               transition={{ duration: 0.18 }}
             >
               {currentStepId === "device" && (
-                <DeviceStep value={profile} onChange={setProfile} />
+                <DeviceStep
+                  value={profile}
+                  onChange={(p) => {
+                    setProfile(p);
+                    // Video only exists for the iPod — switching back to the
+                    // Yoto silently downgrades the pick to music.
+                    if (p === "yoto" && type === "video") setType("music");
+                  }}
+                />
               )}
               {currentStepId === "type" && (
                 <TypeStep
                   value={type}
+                  profile={profile}
                   onChange={(t) => {
                     setType(t);
                     clearSelection();
@@ -462,7 +482,11 @@ function DeviceStep({ value, onChange }) {
 }
 
 /* ─── Step: Type ─────────────────────────────────────────────────────────── */
-function TypeStep({ value, onChange }) {
+function TypeStep({ value, onChange, profile }) {
+  // The Yoto is audio-only, so Video only exists once an iPod is the target.
+  const options = TYPE_OPTIONS.filter(
+    (o) => o.value !== "video" || profile === "ipod",
+  );
   return (
     <div className="space-y-3">
       <div>
@@ -470,7 +494,9 @@ function TypeStep({ value, onChange }) {
           What kind of content?
         </h2>
         <p className="text-sm text-[var(--text-muted)] mt-1">
-          Music downloads automatically. Audiobooks need a manual upload.
+          {profile === "ipod"
+            ? "Music and videos download automatically. Audiobooks need a manual upload."
+            : "Music downloads automatically. Audiobooks need a manual upload."}
         </p>
       </div>
       <SegmentedControl
@@ -478,13 +504,20 @@ function TypeStep({ value, onChange }) {
         fullWidth
         value={value}
         onChange={onChange}
-        options={TYPE_OPTIONS}
+        options={options}
       />
       {value === "audiobook" && (
         <p className="text-xs text-[var(--text-muted)] flex items-start gap-1.5 mt-2">
           <Book className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
           You'll source the audiobook file yourself, then upload it to the
           device. JamJar keeps it on the to-do list.
+        </p>
+      )}
+      {value === "video" && (
+        <p className="text-xs text-[var(--text-muted)] flex items-start gap-1.5 mt-2">
+          <Film className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+          Downloaded then converted for the iPod (Rockbox MPEG) — takes a little
+          longer than a song.
         </p>
       )}
     </div>
@@ -537,7 +570,9 @@ function SourceStep(props) {
         <h2 className="text-lg font-semibold text-[var(--text-primary)]">
           {type === "audiobook"
             ? "Search for an audiobook"
-            : "Find a track"}
+            : type === "video"
+              ? "Find a video"
+              : "Find a track"}
         </h2>
         <p className="text-sm text-[var(--text-muted)] mt-1">
           {type === "audiobook"
@@ -546,8 +581,8 @@ function SourceStep(props) {
         </p>
       </div>
 
-      {/* Music sub-mode */}
-      {type === "music" && (
+      {/* YouTube sub-mode — search or paste link (music and video share it) */}
+      {type !== "audiobook" && (
         <SegmentedControl
           value={source}
           onChange={onSourceChange}
@@ -564,7 +599,9 @@ function SourceStep(props) {
             placeholder={
               type === "audiobook"
                 ? "e.g. Charlotte's Web, Roald Dahl…"
-                : "Try a song name, artist, or both"
+                : type === "video"
+                  ? "Try a music video, cartoon, or show name"
+                  : "Try a song name, artist, or both"
             }
             loading={searching}
             size="lg"
@@ -575,9 +612,11 @@ function SourceStep(props) {
             <p className="text-xs text-[var(--text-muted)] px-1">
               {type === "audiobook"
                 ? "Pulls from openlibrary.org · grown-ups upload the file later."
-                : query.length === 0
-                  ? "Tip: include artist + song for the best match."
-                  : "Keep typing…"}
+                : type === "video"
+                  ? "Videos get converted for the iPod after download — keep it short."
+                  : query.length === 0
+                    ? "Tip: include artist + song for the best match."
+                    : "Keep typing…"}
             </p>
           )}
 
@@ -620,6 +659,8 @@ function SourceStep(props) {
                     >
                       {type === "audiobook" ? (
                         <Book className="w-4 h-4" />
+                      ) : type === "video" ? (
+                        <Film className="w-4 h-4" />
                       ) : (
                         <Music className="w-4 h-4" />
                       )}
@@ -879,8 +920,11 @@ function ConfirmStep({
             <Badge tone={profile === "yoto" ? "yoto" : "ipod"} size="xs">
               {profile === "yoto" ? "📻 Yoto" : "🎧 iPod"}
             </Badge>
-            <Badge tone={type === "audiobook" ? "info" : "neutral"} size="xs">
-              {type === "audiobook" ? "Audiobook" : "Music"}
+            <Badge
+              tone={type === "audiobook" ? "info" : type === "video" ? "brand" : "neutral"}
+              size="xs"
+            >
+              {TYPE_LABELS[type] || "Music"}
             </Badge>
             {selectedTrack?.duration && selectedTrack.duration !== "Unknown" && (
               <Badge tone="neutral" size="xs">
@@ -906,6 +950,9 @@ function ConfirmStep({
           ) : (
             <>
               <li>• {isParent ? "It starts downloading immediately." : "Once approved, it starts downloading."}</li>
+              {type === "video" && (
+                <li>• Then it converts to iPod video format — longer than a song.</li>
+              )}
               <li>• You'll see it under <strong>Library → Ready</strong> when it's done.</li>
             </>
           )}

@@ -5,6 +5,17 @@ All notable changes to JamJar will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Video requests for the iPod**
+  - New "Video" type in the request flow (iPod profile only — the Yoto has no screen)
+  - yt-dlp downloads the video (preferring ≤720p/≤30fps sources), then ffmpeg converts it to a Rockbox-playable `.mpg` (MPEG-2 at 320×240 + MP2 audio)
+  - Video requests share the approval queue, retry and duplicate plumbing with music; a music MP3 no longer satisfies a video request for the same track
+  - Dashboard previews videos with a real `<video>` player and downloads keep their stored extension
+  - `FFMPEG_PATH` env var overrides binary detection; ffmpeg reported on `/api/health/details`
+
 ## [2.3.0] - 2026-09-12
 
 ### Added
