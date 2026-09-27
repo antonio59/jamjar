@@ -461,6 +461,27 @@ export default function Tutorial() {
             <strong>iPod_Control</strong> folder. They're what make the iPod work. And <strong>don't install or use iTunes</strong>{" "}
             (or the Apple Devices app) for this iPod — it would try to "restore" or sync it and wipe your music.
           </Callout>
+
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-4 border border-[var(--border-subtle)] rounded-[var(--r-lg)] bg-[var(--surface-2)]">
+              <p className="text-sm font-semibold text-[var(--text-primary)] mb-2">🔌 Always eject before unplugging</p>
+              <p className="text-xs text-[var(--text-muted)] leading-snug">
+                Even when the copy bar is gone, Windows can still be writing in the background. Right-click{" "}
+                <strong>IZZY → Eject</strong> in File Explorer (or the USB icon by the clock → Eject) and wait for the{" "}
+                "safe to remove" message <em>every single time</em>. Yanking it early can corrupt the song you just copied —
+                or make the whole drive unreadable and the iPod act weird until it's repaired.
+              </p>
+            </div>
+            <div className="p-4 border border-[var(--border-subtle)] rounded-[var(--r-lg)] bg-[var(--surface-2)]">
+              <p className="text-sm font-semibold text-[var(--text-primary)] mb-2">👯 No doubles</p>
+              <p className="text-xs text-[var(--text-muted)] leading-snug">
+                JamJar stops you <em>requesting</em> the same thing twice, but on the iPod you're the dedupe. If Windows asks{" "}
+                <strong>"Replace or Skip?"</strong> the file's already there — pick <strong>Skip</strong> (or Replace only if
+                the first copy was cut short). Check first: open the folder on IZZY before dragging. A stray{" "}
+                <strong>Song (1).mp3</strong> shows twice in Database and eats space — delete it in File Explorer.
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-3">
