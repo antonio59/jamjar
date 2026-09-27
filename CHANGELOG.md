@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Dashboard previews videos with a real `<video>` player and downloads keep their stored extension
   - `FFMPEG_PATH` env var overrides binary detection; ffmpeg reported on `/api/health/details`
 
+- **Audiobook file uploads**
+  - Parents attach the ripped/sourced audio files straight to an approved audiobook request (`POST /api/requests/:id/upload`, up to 50 parts / 2 GB each)
+  - Uploaded parts land in the device download folder alongside yt-dlp files and are downloadable from the dashboard like anything else — no more manual sideloading
+  - Multi-part books list every part in the download dialog with numbered filenames kept in order; re-uploading replaces the earlier parts
+  - "Mark uploaded" stays as the fileless fallback for books copied to a device by hand
+  - nginx `client_max_body_size` raised to 2 GB in the deploy config
+
 ## [2.3.0] - 2026-09-12
 
 ### Added

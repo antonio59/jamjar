@@ -58,6 +58,7 @@ db.exec(`
     downloaded_at DATETIME,
     file_path TEXT,
     file_size_bytes INTEGER,
+    files TEXT,
     error_message TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -208,6 +209,16 @@ const migrations = [
       })();
     },
   },
+  {
+    version: 7,
+    up() {
+      // JSON array of every stored file for a request — audiobooks commonly
+      // arrive as multi-part uploads where file_path alone can't list them.
+      try {
+        db.exec('ALTER TABLE requests ADD COLUMN files TEXT');
+      } catch {} // Column may already exist on retry
+    },
+  },
 ];
 
 const applied = new Set(
@@ -308,9 +319,22 @@ export function createRequest(userId, profile, title, url, type, searchQuery, th
   return request;
 }
 
+// The files column is stored as JSON text; callers always want the array.
+function parseRequestRow(row) {
+  if (!row) return row;
+  if (typeof row.files === 'string') {
+    try {
+      row = { ...row, files: JSON.parse(row.files) };
+    } catch {
+      row = { ...row, files: [] };
+    }
+  }
+  return row;
+}
+
 export function getRequestById(id) {
   const stmt = db.prepare('SELECT * FROM requests WHERE id = ?');
-  return stmt.get(id);
+  return parseRequestRow(stmt.get(id));
 }
 
 // Completed rows count as duplicates on the canonical track_key when the row
@@ -329,12 +353,12 @@ export function getAllRequests() {
     SELECT r.*, ${DUPLICATE_COUNT_SQL} AS download_count
     FROM requests r
     ORDER BY r.created_at DESC
-  `).all();
+  `).all().map(parseRequestRow);
 }
 
 export function getPendingRequests() {
   const stmt = db.prepare("SELECT * FROM requests WHERE status = 'pending' ORDER BY created_at DESC");
-  return stmt.all();
+  return stmt.all().map(parseRequestRow);
 }
 
 export function getRequestsByProfile(profile) {
@@ -343,7 +367,7 @@ export function getRequestsByProfile(profile) {
     FROM requests r
     WHERE r.profile = ?
     ORDER BY r.created_at DESC
-  `).all(profile);
+  `).all(profile).map(parseRequestRow);
 }
 
 // Per-device duplicate picture for a track key: completed copies on each
@@ -404,7 +428,7 @@ export function getArtists(profile = null) {
 export function resetRequestForRetry(requestId) {
   db.prepare(
     `UPDATE requests SET status = 'approved', error_message = NULL, file_path = NULL,
-     file_size_bytes = NULL, downloaded_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+     file_size_bytes = NULL, files = NULL, downloaded_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).run(requestId);
   const request = getRequestById(requestId);
   publishRequestChange({ type: 'updated', request });
@@ -439,6 +463,28 @@ export function updateRequestStatus(requestId, status, errorMessage = null, file
      updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   );
   stmt.run(status, errorMessage, filePath, status, fileSizeBytes, status, requestId);
+  const request = getRequestById(requestId);
+  publishRequestChange({ type: 'updated', request });
+  return request;
+}
+
+// Marks an audiobook request done with the files a parent uploaded through
+// /requests/:id/upload. files is [{ name, size }] and file_path points at the
+// first part so preview/download keep working for single-file requests too.
+export function markUploadedWithFiles(requestId, files) {
+  const first = files[0];
+  const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+  db.prepare(
+    `UPDATE requests SET status = 'completed', error_message = NULL,
+     file_path = ?, file_size_bytes = ?, files = ?,
+     downloaded_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`
+  ).run(
+    first ? `/api/downloads/${first.profile}/${first.name}` : null,
+    totalBytes,
+    JSON.stringify(files),
+    requestId
+  );
   const request = getRequestById(requestId);
   publishRequestChange({ type: 'updated', request });
   return request;

@@ -164,6 +164,11 @@ export default function RequestRow({
             <Badge tone={typeInfo.tone} size="xs">
               {typeInfo.label}
             </Badge>
+            {Array.isArray(request.files) && request.files.length > 1 && (
+              <Badge tone="neutral" size="xs">
+                {request.files.length} parts
+              </Badge>
+            )}
             <span className="text-[11px] text-[var(--text-muted)]">
               {formatDate(request.created_at)}
             </span>
@@ -254,33 +259,6 @@ function RowActions({
     );
   }
 
-  // Audiobook upload — approved audiobooks waiting on manual upload
-  if (isParent && request.type === "audiobook" && request.status === "approved") {
-    lanes.push(
-      <div key="upload" className="flex items-center gap-2">
-        <Button
-          size="sm"
-          variant="primary"
-          loading={busy === "uploaded"}
-          onClick={() => onMarkUploaded(request.id)}
-          iconLeft={<UploadCloud className="w-4 h-4" />}
-        >
-          Mark uploaded
-        </Button>
-        {onShowUploadGuide && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onShowUploadGuide(request)}
-            iconLeft={<HelpCircle className="w-4 h-4" />}
-          >
-            How to upload
-          </Button>
-        )}
-      </div>,
-    );
-  }
-
   // Library — download is primary on ready music; re-download is recovery
   if (request.status === "completed" && request.file_path) {
     lanes.push(
@@ -300,6 +278,24 @@ function RowActions({
           </Button>
         )}
       </div>,
+    );
+  }
+
+  // Audiobook upload — approved audiobooks wait for a parent to attach the
+  // actual audio files (or mark done without files if sideloaded by hand).
+  // Completed uploads show the same lane so a wrong file can be swapped out.
+  if (
+    isParent &&
+    request.type === "audiobook" &&
+    ["approved", "completed"].includes(request.status)
+  ) {
+    lanes.push(
+      <AudiobookUploadLane
+        key="upload"
+        request={request}
+        onMarkUploaded={onMarkUploaded}
+        onShowUploadGuide={onShowUploadGuide}
+      />,
     );
   }
 
@@ -332,6 +328,77 @@ function RowActions({
 
   if (lanes.length === 0) return null;
   return <div className="flex flex-wrap items-center gap-3 mt-3">{lanes}</div>;
+}
+
+/* ─── Audiobook upload — parent attaches the ripped files; the request then
+     completes with real paths so anyone on the profile can download them. ─── */
+function AudiobookUploadLane({ request, onMarkUploaded, onShowUploadGuide }) {
+  const uploadAudiobook = useStore((s) => s.uploadAudiobook);
+  const fileInputRef = useRef(null);
+  const [progress, setProgress] = useState(null);
+  const [error, setError] = useState(null);
+
+  const handleFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ""; // allow picking the same files again after a failure
+    if (files.length === 0) return;
+    setError(null);
+    setProgress(0);
+    try {
+      await uploadAudiobook(request.id, files, setProgress);
+    } catch (err) {
+      setError(err.response?.data?.error || "Upload failed — try again");
+    } finally {
+      setProgress(null);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="audio/*,.mp3,.m4a,.m4b,.aac,.ogg,.oga,.opus,.flac,.wav,.aax,.mp4"
+        className="hidden"
+        onChange={handleFiles}
+      />
+      <Button
+        size="sm"
+        variant="primary"
+        loading={progress !== null}
+        onClick={() => fileInputRef.current?.click()}
+        iconLeft={<UploadCloud className="w-4 h-4" />}
+      >
+        {progress !== null
+          ? `Uploading ${progress}%`
+          : request.status === "completed"
+            ? "Replace files"
+            : "Upload files"}
+      </Button>
+      {request.status !== "completed" && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => onMarkUploaded(request.id)}
+          title="Mark done without attaching files (copied to the device by hand)"
+        >
+          Mark uploaded
+        </Button>
+      )}
+      {onShowUploadGuide && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => onShowUploadGuide(request)}
+          iconLeft={<HelpCircle className="w-4 h-4" />}
+        >
+          How to upload
+        </Button>
+      )}
+      {error && <span className="text-xs text-[var(--danger)]">{error}</span>}
+    </div>
+  );
 }
 
 /* ─── Lifecycle Action — cancel or delete depending on state ─────────────── */
@@ -497,12 +564,25 @@ function sanitizeFilename(name) {
   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "").trim().slice(0, 100);
 }
 
+function formatBytes(n) {
+  if (!n) return "";
+  if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(0)} MB`;
+  return `${Math.max(1, Math.round(n / 1024))} KB`;
+}
+
 function DownloadAction({ request }) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState(null);
   const defaultName = sanitizeFilename(request.title) || "song";
   const [filename, setFilename] = useState(defaultName);
   const [downloading, setDownloading] = useState(false);
+
+  // Multi-part uploads (audiobooks) get a part list instead of the rename
+  // field — each part is fetched straight from the downloads endpoint.
+  const parts =
+    Array.isArray(request.files) && request.files.length > 1
+      ? request.files
+      : null;
 
   // Extension follows the stored file — .mpg for videos, .mp3 for audio.
   const fileExt =
@@ -555,17 +635,40 @@ function DownloadAction({ request }) {
       <ConfirmDialog
         open={open}
         onClose={() => !downloading && setOpen(false)}
-        onConfirm={handleDownload}
+        onConfirm={parts ? () => setOpen(false) : handleDownload}
         loading={downloading}
-        title="Download as"
+        title={parts ? `Download ${parts.length} parts` : "Download as"}
         description={
-          fileExt === "mpg"
-            ? "Pick a filename for your saved copy. Video files come down as .mpg — drop them on the iPod and play via Rockbox's mpegplayer."
-            : `Pick a filename for your saved copy. The file is downloaded as .${fileExt}.`
+          parts
+            ? "Grab every part, then drop them into an Audiobooks folder on the device — numbered names keep them in order."
+            : fileExt === "mpg"
+              ? "Pick a filename for your saved copy. Video files come down as .mpg — drop them on the iPod and play via Rockbox's mpegplayer."
+              : `Pick a filename for your saved copy. The file is downloaded as .${fileExt}.`
         }
-        confirmLabel="Save file"
+        confirmLabel={parts ? "Done" : "Save file"}
         variant="primary"
       >
+        {parts ? (
+          <ul className="space-y-1.5 max-h-64 overflow-y-auto">
+            {parts.map((f, i) => (
+              <li key={f.name}>
+                <a
+                  href={`/api/downloads/${f.profile}/${encodeURIComponent(f.name)}`}
+                  download={f.name}
+                  className="flex items-center gap-2 px-3 py-2 rounded-[var(--r-md)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] hover:bg-[var(--surface-2)] text-sm text-[var(--text-primary)]"
+                >
+                  <Download className="w-3.5 h-3.5 text-[var(--brand)] flex-shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">
+                    Part {i + 1} — {f.name}
+                  </span>
+                  <span className="text-xs text-[var(--text-muted)] tabular-nums flex-shrink-0">
+                    {formatBytes(f.size)}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <Input
@@ -598,6 +701,7 @@ function DownloadAction({ request }) {
             </button>
           )}
         </div>
+        )}
       </ConfirmDialog>
     </>
   );

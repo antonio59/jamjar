@@ -129,6 +129,18 @@ const useStore = create((set, get) => ({
     return response.data;
   },
 
+  uploadAudiobook: async (id, files, onProgress) => {
+    const data = new FormData();
+    for (const file of files) data.append('files', file);
+    const response = await api.post(`/requests/${id}/upload`, data, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: onProgress
+        ? (e) => onProgress(e.total ? Math.round((e.loaded / e.total) * 100) : 0)
+        : undefined,
+    });
+    return response.data;
+  },
+
   getUsers: async () => {
     if (!get().isAuthenticated) return [];
     const response = await api.get(`/users`);

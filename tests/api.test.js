@@ -244,6 +244,96 @@ describe('requests', () => {
     expect(downloadAndUpload).toHaveBeenCalled();
   });
 
+  it('lets a parent attach audiobook files and completes the request', async () => {
+    const created = await request(app)
+      .post('/api/requests')
+      .set('X-Session-Id', parentSession)
+      .send({
+        profile: 'ipod',
+        title: 'R. J. Palacio - Wonder',
+        type: 'audiobook',
+        searchQuery: 'wonder',
+      });
+    expect(created.status).toBe(200);
+
+    const res = await request(app)
+      .post(`/api/requests/${created.body.id}/upload`)
+      .set('X-Session-Id', parentSession)
+      .attach('files', Buffer.from('ID3 fake mp3 part one'), 'part1.mp3')
+      .attach('files', Buffer.from('ID3 fake mp3 part two'), 'part2.mp3');
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('completed');
+    expect(res.body.files).toHaveLength(2);
+    expect(res.body.file_path).toBe(
+      `/api/downloads/ipod/${res.body.files[0].name}`,
+    );
+    expect(res.body.file_size_bytes).toBeGreaterThan(0);
+    for (const f of res.body.files) {
+      expect(
+        fs.existsSync(path.join(process.env.DOWNLOAD_DIR, 'ipod', f.name)),
+      ).toBe(true);
+    }
+
+    const dl = await request(app)
+      .get(res.body.file_path)
+      .set('X-Session-Id', parentSession);
+    expect(dl.status).toBe(200);
+    expect(dl.headers['content-disposition']).toContain(res.body.files[0].name);
+  });
+
+  it('rejects audiobook uploads from children and on non-audiobook requests', async () => {
+    const book = await request(app)
+      .post('/api/requests')
+      .set('X-Session-Id', parentSession)
+      .send({
+        profile: 'yoto',
+        title: 'Matilda',
+        type: 'audiobook',
+        searchQuery: 'matilda',
+      });
+
+    const asChild = await request(app)
+      .post(`/api/requests/${book.body.id}/upload`)
+      .set('X-Session-Id', childSession)
+      .attach('files', Buffer.from('x'), 'matilda.mp3');
+    expect(asChild.status).toBe(403);
+
+    const song = await request(app)
+      .post('/api/requests')
+      .set('X-Session-Id', parentSession)
+      .send({
+        profile: 'ipod',
+        title: 'A Song',
+        type: 'music',
+        url: 'https://youtu.be/abc123def45',
+        searchQuery: 'a song',
+      });
+    const wrongType = await request(app)
+      .post(`/api/requests/${song.body.id}/upload`)
+      .set('X-Session-Id', parentSession)
+      .attach('files', Buffer.from('x'), 'song.mp3');
+    expect(wrongType.status).toBe(400);
+  });
+
+  it('rejects non-audio file types in uploads', async () => {
+    const book = await request(app)
+      .post('/api/requests')
+      .set('X-Session-Id', parentSession)
+      .send({
+        profile: 'ipod',
+        title: 'Some Book',
+        type: 'audiobook',
+        searchQuery: 'some book',
+      });
+    const res = await request(app)
+      .post(`/api/requests/${book.body.id}/upload`)
+      .set('X-Session-Id', parentSession)
+      .attach('files', Buffer.from('MZ'), 'not-audio.exe');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/unsupported/i);
+  });
+
   it("won't let a child delete someone else's request", async () => {
     const parentRequest = await request(app)
       .post('/api/requests')

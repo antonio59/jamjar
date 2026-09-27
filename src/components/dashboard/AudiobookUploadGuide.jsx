@@ -4,18 +4,19 @@ import { ExternalLink, BookOpen, Upload, CheckCircle } from "lucide-react";
 const STEPS = {
   yoto: [
     { title: "Find or rip the audiobook", body: "Use your preferred source — Audible, library, CD rip, etc. You'll need MP3 or M4B files." },
+    { title: "Upload the files to JamJar", body: "Tap \"Upload files\" on the request and pick all the parts — JamJar stores them so the request stays linked and anyone can grab them later." },
+    { title: "Download them back on a computer", body: "Open this request in the library, tap Download and save all the parts." },
     { title: "Open Yoto Studio", body: "Sign in at my.yotoplay.com on a computer (uploading isn't available in the app)." },
     { title: "Create a new card", body: "Click + Create Playlist → upload the audio files one chapter at a time." },
-    { title: "Add cover art and title", body: "Match the JamJar request so it stays linked. Use the original cover where possible." },
     { title: "Link to a physical card or QR", body: "Print or attach to a card so your child can find it." },
-    { title: "Mark uploaded in JamJar", body: "Tap \"Mark uploaded\" on the request so it's removed from the Needs Upload list." },
   ],
   ipod: [
     { title: "Source the audiobook", body: "Buy from Audible / iTunes, rip a CD, or grab an MP3/M4A/M4B file." },
+    { title: "Upload the files to JamJar", body: "Tap \"Upload files\" on the request and pick all the parts — JamJar stores them so the request stays linked and anyone can grab them later." },
+    { title: "Izzy downloads them", body: "From the dashboard on her Windows laptop: open the request → Download → save all the parts (they stay numbered, in order)." },
     { title: "Plug in the iPod", body: "It runs Rockbox now, so it shows up as a normal USB drive called IZZY (File Explorer on Windows, Finder sidebar on a Mac). Don't use iTunes, Finder sync or Apple Devices." },
-    { title: "Make a book folder", body: "Inside Audiobooks, create a folder named \"Author - Title\" and drag the files in (numbered names keep chapters in order). Add the cover as cover.jpg." },
-    { title: "Eject, then unplug", body: "Eject IZZY first. Rockbox remembers the listening position and updates its database on the next start-up." },
-    { title: "Mark uploaded in JamJar", body: "Tap \"Mark uploaded\" so this request leaves the queue." },
+    { title: "Make a book folder", body: "Inside Audiobooks, create a folder named \"Author - Title\" and drag the parts in (numbered names keep chapters in order). Add the cover as cover.jpg." },
+    { title: "Eject, then unplug", body: "Right-click IZZY → Eject and wait for the \"safe to remove\" message. Rockbox remembers the listening position and updates its database on the next start-up." },
   ],
 };
 
@@ -58,8 +59,8 @@ export default function AudiobookUploadGuide({ open, onClose, request, onMarkUpl
         <Upload className="w-4 h-4 text-[var(--info)] flex-shrink-0 mt-0.5" />
         <p className="text-sm text-[var(--text-secondary)]">
           Audiobooks can't be auto-downloaded — copyright and length make this a
-          manual flow. Follow the steps below, then come back and mark it
-          uploaded.
+          manual flow. Upload the files to JamJar and the request completes like
+          a normal download, ready for anyone on the profile to grab.
         </p>
       </div>
 

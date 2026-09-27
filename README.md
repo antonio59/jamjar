@@ -8,6 +8,7 @@ Full-stack family music request app with Express, SQLite, and React.
 - YouTube search with safe filtering + playlist support
 - yt-dlp download pipeline
 - Video requests for the iPod — downloaded then converted to Rockbox-playable MPEG (`.mpg`, 320×240 MPEG-2 + MP2) via ffmpeg
+- Audiobook uploads — parents attach multi-part audio files to a request; kids download them from the dashboard
 - Real-time request tracking
 - Blocked keywords for content safety
 - Clean-version-only music: explicit/age-restricted results are filtered out and labelled clean edits ranked first

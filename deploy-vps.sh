@@ -145,6 +145,10 @@ server {
     listen 80;
     server_name $DOMAIN;
 
+    # Audiobook uploads run through this proxy — a long book is multi-GB.
+    client_max_body_size 2g;
+    client_body_timeout 600;
+
     location / {
         proxy_pass http://localhost:$PORT;
         proxy_http_version 1.1;

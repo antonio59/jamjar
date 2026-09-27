@@ -5,6 +5,7 @@ import { randomBytes, createHash } from "crypto";
 import { fileURLToPath } from "url";
 import axios from "axios";
 import rateLimit from "express-rate-limit";
+import multer from "multer";
 import {
   verifyPin,
   createRequest,
@@ -23,6 +24,7 @@ import {
   getDuplicateInfo,
   getArtists,
   resetRequestForRetry,
+  markUploadedWithFiles,
   createUser,
   getUserByUsername,
   getUserById,
@@ -534,6 +536,116 @@ router.post(
   },
 );
 
+// Audiobook file upload — a parent posts the ripped/sourced audio files and
+// the request completes just like a download did, so the parts can be fetched
+// from the dashboard like anything else.
+const AUDIOBOOK_EXTS = new Set([
+  "mp3", "m4a", "m4b", "aac", "ogg", "oga", "opus", "flac", "wav", "aax", "mp4",
+]);
+const UPLOAD_MAX_FILES = 50;
+const UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024; // a long book can exceed a GB
+
+function safeFilePart(name) {
+  // eslint-disable-next-line no-control-regex -- control chars are illegal in filenames
+  return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "").trim().slice(0, 120);
+}
+
+const audiobookUpload = multer({
+  storage: multer.diskStorage({
+    destination(req, file, cb) {
+      const dir = path.join(DOWNLOAD_DIR, req.jamRequest.profile);
+      fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename(req, file, cb) {
+      const ext = path.extname(file.originalname).slice(1).toLowerCase();
+      if (!AUDIOBOOK_EXTS.has(ext)) {
+        return cb(new Error(`Unsupported file type: .${ext}`));
+      }
+      const dir = path.join(DOWNLOAD_DIR, req.jamRequest.profile);
+      const idx = String(++req.uploadIdx).padStart(2, "0");
+      const base = safeFilePart(req.jamRequest.title) || "audiobook";
+      const orig = safeFilePart(
+        path.basename(file.originalname, path.extname(file.originalname)),
+      );
+      const stem = orig ? `${base} - ${idx} ${orig}` : `${base} - ${idx}`;
+      let name = `${stem}.${ext}`;
+      for (let n = 2; fs.existsSync(path.join(dir, name)); n++) {
+        name = `${stem} (${n}).${ext}`;
+      }
+      cb(null, name);
+    },
+  }),
+  limits: { fileSize: UPLOAD_MAX_BYTES, files: UPLOAD_MAX_FILES },
+});
+
+router.post(
+  "/requests/:id/upload",
+  authenticateSession,
+  requireParent,
+  (req, res, next) => {
+    const request = getRequestById(req.params.id);
+    if (!request) return res.status(404).json({ error: "Not found" });
+    if (request.type !== "audiobook") {
+      return res
+        .status(400)
+        .json({ error: "Only audiobook requests take file uploads" });
+    }
+    req.jamRequest = request;
+    req.uploadIdx = 0;
+    next();
+  },
+  (req, res, next) =>
+    audiobookUpload.array("files", UPLOAD_MAX_FILES)(req, res, (err) => {
+      if (!err) return next();
+      // A rejected or oversized file can leave earlier parts already on disk.
+      for (const f of req.files || []) {
+        try {
+          fs.unlinkSync(f.path);
+        } catch {}
+      }
+      const message =
+        err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
+          ? "File too large — split the audiobook into smaller parts"
+          : err.message || "Upload failed";
+      res.status(400).json({ error: message });
+    }),
+  (req, res) => {
+    const uploaded = req.files || [];
+    if (uploaded.length === 0) {
+      return res.status(400).json({ error: "Attach at least one audio file" });
+    }
+    try {
+      // Replace files from any earlier upload so re-uploads don't pile up.
+      const prev = Array.isArray(req.jamRequest.files)
+        ? req.jamRequest.files
+        : JSON.parse(req.jamRequest.files || "[]");
+      for (const f of prev) {
+        try {
+          fs.unlinkSync(path.join(DOWNLOAD_DIR, f.profile, f.name));
+        } catch {}
+      }
+      const files = uploaded.map((f) => ({
+        profile: req.jamRequest.profile,
+        name: f.filename,
+        size: f.size,
+      }));
+      res.json(markUploadedWithFiles(req.jamRequest.id, files));
+    } catch (err) {
+      for (const f of uploaded) {
+        try {
+          fs.unlinkSync(f.path);
+        } catch {}
+      }
+      logger.error("audiobook upload failed", {
+        requestId: req.jamRequest.id,
+        error: err.message,
+      });
+      res.status(500).json({ error: "Failed to save upload" });
+    }
+  },
+);
+
 // DELETE a request — covers both "cancel" (active states) and "delete" (terminal)
 // semantics. Parents can act on any request; children can only act on their own.
 // Also removes the underlying download file from disk if present, so completed
@@ -552,10 +664,21 @@ router.delete(
           .json({ error: "You can only cancel your own requests" });
       }
 
-      if (existing.file_path) {
+      // Every stored file goes: file_path covers the first part, the files
+      // JSON lists any extra audiobook parts uploaded alongside it.
+      const storedFiles = [existing.file_path];
+      try {
+        const extras = Array.isArray(existing.files)
+          ? existing.files
+          : JSON.parse(existing.files || "[]");
+        for (const f of extras) {
+          storedFiles.push(`/api/downloads/${f.profile}/${f.name}`);
+        }
+      } catch {}
+      for (const stored of new Set(storedFiles.filter(Boolean))) {
         const filePath = path.join(
           DOWNLOAD_DIR,
-          existing.file_path.replace("/api/downloads/", ""),
+          stored.replace("/api/downloads/", ""),
         );
         if (fs.existsSync(filePath)) {
           try {
