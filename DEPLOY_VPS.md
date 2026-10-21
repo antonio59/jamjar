@@ -174,6 +174,7 @@ systemctl restart jamjar
 
 ## Security Notes
 
+- The Node process binds to `127.0.0.1` (`HOST` in `.env`; set `0.0.0.0` only if it must accept non-local connections). Nginx must `proxy_pass` to `http://127.0.0.1:3001` — `localhost` can resolve to `::1` and then 502.
 - The app runs as a restricted system user (`jamjar`)
 - `ACCESS_TOKEN_SECRET` is auto-generated (256-bit random)
 - SSL is enforced via Let's Encrypt
