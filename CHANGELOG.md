@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - "Mark uploaded" stays as the fileless fallback for books copied to a device by hand
   - nginx `client_max_body_size` raised to 2 GB in the deploy config
 
+### Security
+
+- **24 dependency vulnerabilities cleared** (9 high, 13 medium, 2 low) across 10 packages — bumped direct dependencies (`axios`, `express`, `express-rate-limit`, `eslint`, `vitest`, `@vitest/coverage-v8`), consolidated `pnpm` overrides into `pnpm-workspace.yaml` with scoped ranges (`body-parser`, `fast-uri`, `follow-redirects`, `glob`, `ip-address`, `qs`, `undici`, `zod`), and verified 0 open OSV alerts
+
 ## [2.3.0] - 2026-09-12
 
 ### Added
